@@ -1,0 +1,917 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>单词乐园 · 记单词小游戏</title>
+<style>
+:root{
+  --bg:#f4f6fb; --card:#fff; --ink:#24292f; --muted:#6b7280;
+  --primary:#4f46e5; --primary2:#7c3aed; --ok:#16a34a; --err:#dc2626;
+  --warn:#d97706; --radius:16px; --shadow:0 4px 16px rgba(30,41,80,.08);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif;background:var(--bg);color:var(--ink);min-height:100vh}
+header{background:linear-gradient(135deg,var(--primary),var(--primary2));color:#fff;padding:18px 20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}
+header h1{font-size:22px;letter-spacing:1px}
+header .stats{background:rgba(255,255,255,.16);padding:6px 14px;border-radius:999px;font-size:14px}
+main{max-width:860px;margin:0 auto;padding:24px 16px 60px}
+.section{display:none}
+.section.active{display:block}
+/* 首页游戏卡片 */
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-top:16px}
+.game-card{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:22px;cursor:pointer;transition:transform .15s,box-shadow .15s;border:2px solid transparent}
+.game-card:hover{transform:translateY(-4px);box-shadow:0 10px 26px rgba(30,41,80,.14);border-color:var(--primary)}
+.game-card .icon{font-size:34px}
+.game-card h3{margin:10px 0 6px;font-size:18px}
+.game-card p{color:var(--muted);font-size:13.5px;line-height:1.6}
+.game-card .tag{display:inline-block;margin-top:10px;font-size:12px;color:var(--primary);background:rgba(79,70,229,.08);padding:2px 10px;border-radius:999px}
+h2{font-size:18px;margin:8px 0 4px}
+.sub{color:var(--muted);font-size:13px;margin-bottom:14px}
+/* 按钮 */
+.btn{border:none;border-radius:12px;padding:12px 22px;font-size:15px;cursor:pointer;background:var(--primary);color:#fff;transition:filter .15s,transform .1s;font-family:inherit}
+.btn:hover{filter:brightness(1.1)}
+.btn:active{transform:scale(.97)}
+.btn.ghost{background:#eef0f6;color:var(--ink)}
+.btn.ok{background:var(--ok)}
+.btn.err{background:var(--err)}
+.btn.big{font-size:17px;padding:14px 30px}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+/* 游戏通用 */
+.gametop{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;gap:10px}
+.score-badge{background:var(--card);box-shadow:var(--shadow);border-radius:999px;padding:8px 16px;font-weight:600;font-size:14px}
+.progress{height:8px;background:#e5e7eb;border-radius:999px;overflow:hidden;margin-bottom:18px}
+.progress i{display:block;height:100%;background:linear-gradient(90deg,var(--primary),var(--primary2));border-radius:999px;transition:width .3s}
+/* 答题区 */
+.quiz-word{font-size:44px;font-weight:800;text-align:center;letter-spacing:1px;margin:8px 0 6px}
+.hint{text-align:center;color:var(--muted);font-size:14px;margin-bottom:20px}
+.options{display:grid;grid-template-columns:1fr;gap:12px;max-width:520px;margin:0 auto}
+.opt{border:2px solid #e5e7eb;background:var(--card);border-radius:14px;padding:14px 18px;font-size:16px;cursor:pointer;text-align:left;transition:all .15s;font-family:inherit}
+.opt:hover:not(:disabled){border-color:var(--primary);background:rgba(79,70,229,.04)}
+.opt:disabled{cursor:default}
+.opt.correct{border-color:var(--ok);background:rgba(22,163,74,.1)}
+.opt.wrong{border-color:var(--err);background:rgba(220,38,38,.1)}
+/* 拼写 */
+.spell-wrap{max-width:520px;margin:0 auto;text-align:center}
+.spell-meaning{font-size:20px;background:var(--card);box-shadow:var(--shadow);border-radius:14px;padding:22px;margin-bottom:18px;line-height:1.8}
+.letter-row{display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-bottom:16px}
+.letter-box{width:36px;height:44px;border:2px solid #d1d5db;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;background:var(--card)}
+.letter-box.filled{border-color:var(--primary);color:var(--primary)}
+.letter-box.correct{border-color:var(--ok);color:var(--ok)}
+.letter-box.blank{border-color:var(--warn);color:var(--warn)}
+.letter-pool{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-bottom:18px}
+.letter-tile{width:40px;height:46px;border-radius:10px;background:var(--card);box-shadow:var(--shadow);display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;cursor:pointer;border:2px solid transparent;user-select:none}
+.letter-tile:hover{border-color:var(--primary)}
+.letter-tile.used{opacity:.25;pointer-events:none}
+/* 翻牌 */
+.memory-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:12px;max-width:640px;margin:0 auto}
+.mcard{aspect-ratio:3/4;border-radius:14px;perspective:700px;cursor:pointer}
+.mcard-inner{position:relative;width:100%;height:100%;transition:transform .4s;transform-style:preserve-3d}
+.mcard.flipped .mcard-inner{transform:rotateY(180deg)}
+.mcard-front,.mcard-back{position:absolute;inset:0;backface-visibility:hidden;border-radius:14px;display:flex;align-items:center;justify-content:center;padding:8px;text-align:center;font-size:14px;font-weight:600;word-break:break-all}
+.mcard-front{background:linear-gradient(135deg,var(--primary),var(--primary2));color:#fff;font-size:26px}
+.mcard-back{background:var(--card);box-shadow:var(--shadow);transform:rotateY(180deg);border:2px solid #e5e7eb}
+.mcard.matched .mcard-back{border-color:var(--ok);background:rgba(22,163,74,.08)}
+.mcard.matched{pointer-events:none}
+/* 猜词 */
+.hangman-box{max-width:400px;margin:0 auto;text-align:center}
+.hangman-svg{display:block;margin:0 auto}
+.word-blanks{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin:16px 0}
+.blank{width:34px;height:44px;border-bottom:3px solid #9ca3af;display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:700}
+.used-tiles{display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin:14px 0;min-height:36px}
+.used-tile{width:34px;height:36px;border-radius:8px;background:#eef0f6;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:15px;color:var(--muted)}
+.used-tile.bad{background:rgba(220,38,38,.1);color:var(--err)}
+/* 结果弹层 */
+.overlay{position:fixed;inset:0;background:rgba(20,24,40,.45);display:none;align-items:center;justify-content:center;z-index:50;padding:16px}
+.overlay.show{display:flex}
+.result-card{background:#fff;border-radius:20px;padding:34px 30px;max-width:420px;width:100%;text-align:center;box-shadow:0 20px 50px rgba(0,0,0,.2);animation:pop .25s ease}
+@keyframes pop{from{transform:scale(.85);opacity:0}to{transform:scale(1);opacity:1}}
+.result-card .big{font-size:46px}
+.result-card h2{margin:10px 0}
+.result-card p{color:var(--muted);margin-bottom:18px;font-size:14px}
+.result-actions{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+/* 单词本 */
+.wordbook-list{display:grid;gap:8px}
+.wb-item{background:var(--card);box-shadow:var(--shadow);border-radius:12px;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px}
+.wb-item .en{font-weight:700;font-size:16px}
+.wb-item .zh{color:var(--muted);font-size:13.5px}
+.wb-item .del{background:none;border:none;color:var(--err);font-size:18px;cursor:pointer;padding:4px 8px;border-radius:8px}
+.wb-item .del:hover{background:rgba(220,38,38,.1)}
+.add-row{display:flex;gap:8px;margin:14px 0;flex-wrap:wrap}
+.add-row input{flex:1;min-width:160px;border:2px solid #e5e7eb;border-radius:12px;padding:11px 14px;font-size:14px;font-family:inherit;outline:none}
+.add-row input:focus{border-color:var(--primary)}
+.note{color:var(--muted);font-size:12px;margin-top:8px;line-height:1.7}
+/* 设置 */
+.lib-row{display:flex;justify-content:space-between;align-items:center;gap:8px;background:var(--card);box-shadow:var(--shadow);border-radius:12px;padding:12px 16px;border:2px solid transparent;margin-bottom:10px;cursor:pointer;max-width:520px}
+.lib-row:hover{border-color:var(--primary)}
+.lib-row.on{border-color:var(--primary)}
+.lib-name{font-weight:700;font-size:15px}
+.lib-row .cnt{color:var(--muted);font-size:12.5px;margin-top:2px}
+.mini{background:#eef0f6;border:none;border-radius:8px;width:30px;height:30px;cursor:pointer;font-size:14px;color:var(--ink);font-family:inherit}
+.mini:hover{background:#e2e5ee}
+.mini.on{background:rgba(79,70,229,.12);color:var(--primary)}
+.lib-words{max-width:520px;display:flex;flex-wrap:wrap;gap:6px;background:var(--card);border-radius:12px;padding:10px 12px;margin:-4px 0 10px;box-shadow:var(--shadow);max-height:220px;overflow-y:auto}
+.chip{background:#eef0f6;border-radius:999px;padding:4px 10px;font-size:12.5px;color:var(--ink)}
+.mini.del{color:var(--err);background:rgba(220,38,38,.08)}
+.mini.del:hover{background:rgba(220,38,38,.16)}
+#importBox{width:100%;max-width:520px;border:2px solid #e5e7eb;border-radius:12px;padding:12px;font-family:inherit;font-size:14px;outline:none;resize:vertical}
+#importBox:focus{border-color:var(--primary)}
+/* 记忆闪卡模式复习 */
+.flash-big{font-size:30px;font-weight:800;text-align:center;margin:10px 0}
+.toast{position:fixed;top:18px;left:50%;transform:translateX(-50%) translateY(-80px);background:#1f2937;color:#fff;padding:10px 20px;border-radius:999px;font-size:14px;transition:transform .3s;z-index:99}
+.toast.show{transform:translateX(-50%) translateY(0)}
+@media(max-width:480px){
+  .quiz-word{font-size:34px}
+  .letter-box{width:30px;height:38px;font-size:18px}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🎓 单词乐园</h1>
+  <div class="stats">🔥 连续答对 <span id="streak">0</span> 题 · ⭐ 总分 <span id="totalScore">0</span> · 📚 <span id="wordCount">0</span> 词</div>
+</header>
+
+<main>
+  <!-- ======== 首页 ======== -->
+  <section id="s-home" class="section active">
+    <h2>选择游戏</h2>
+    <p class="sub">在玩中学，每个游戏都会训练你记单词的不同能力</p>
+    <div class="grid" id="homeGrid"></div>
+    <div style="display:flex;gap:10px;margin-top:20px;flex-wrap:wrap">
+      <button class="btn" onclick="go('wordbook')">📖 我的单词本</button>
+      <button class="btn ghost" onclick="go('settings')">⚙️ 设置</button>
+      <button class="btn ghost" onclick="resetScore()">🔄 重置分数</button>
+    </div>
+  </section>
+
+  <!-- ======== 四选一 ======== -->
+  <section id="s-quiz" class="section">
+    <div class="gametop">
+      <button class="btn ghost" onclick="go('home')">← 返回</button>
+      <div class="score-badge">✅ 对 <span id="quizCorrect">0</span> · ❌ 错 <span id="quizWrong">0</span></div>
+    </div>
+    <div class="progress"><i id="quizProgress" style="width:0%"></i></div>
+    <div id="quizArea"></div>
+  </section>
+
+  <!-- ======== 拼写 ======== -->
+  <section id="s-spell" class="section">
+    <div class="gametop">
+      <button class="btn ghost" onclick="go('home')">← 返回</button>
+      <div class="score-badge">✅ <span id="spellCorrect">0</span> · ❌ <span id="spellWrong">0</span></div>
+    </div>
+    <div class="progress"><i id="spellProgress" style="width:0%"></i></div>
+    <div id="spellArea"></div>
+  </section>
+
+  <!-- ======== 翻牌 ======== -->
+  <section id="s-memory" class="section">
+    <div class="gametop">
+      <button class="btn ghost" onclick="go('home')">← 返回</button>
+      <div class="score-badge"><span id="memInfo">0</span> 对匹配</div>
+    </div>
+    <div id="memoryArea" style="text-align:center"></div>
+  </section>
+
+  <!-- ======== 猜单词 ======== -->
+  <section id="s-hangman" class="section">
+    <div class="gametop">
+      <button class="btn ghost" onclick="go('home')">← 返回</button>
+      <div class="score-badge">剩余生命 <span id="hmLives">0</span></div>
+    </div>
+    <div id="hangmanArea"></div>
+  </section>
+
+  <!-- ======== 闪卡复习 ======== -->
+  <section id="s-flash" class="section">
+    <div class="gametop">
+      <button class="btn ghost" onclick="go('home')">← 返回</button>
+      <div class="score-badge" id="flashInfo"></div>
+    </div>
+    <div id="flashArea"></div>
+  </section>
+
+  <!-- ======== 单词本 ======== -->
+  <section id="s-wordbook" class="section">
+    <div class="gametop">
+      <button class="btn ghost" onclick="go('home')">← 返回</button>
+    </div>
+    <h2>我的单词本</h2>
+    <p class="sub">查看、添加自己的单词，也自动收录游戏里的错题</p>
+    <div class="add-row">
+      <input id="newEn" placeholder="英文单词，如 abandon" onkeydown="if(event.key==='Enter')addWord()">
+      <input id="newZh" placeholder="中文释义，如 放弃" onkeydown="if(event.key==='Enter')addWord()">
+      <button class="btn" onclick="addWord()">＋ 添加</button>
+    </div>
+    <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+      <button class="btn ghost" onclick="reviewMode=false;setPool('custom');renderWordbook()">📗 当前词库</button>
+      <button class="btn ghost" onclick="reviewMode=false;setPool('wrong');renderWordbook()">❌ 只看错题</button>
+      <button class="btn ghost" onclick="reviewMode=false;setPool('default');renderWordbook()">☑ 只看内置</button>
+      <button class="btn ghost" onclick="startReview()">🎴 闪卡复习</button>
+    </div>
+    <div class="wordbook-list" id="wbList"></div>
+    <p class="note">内置词库 <span id="builtinCount"></span> 词，仅存于本地浏览器，可网上下载后改代码或直接添加。</p>
+  </section>
+
+  <!-- ======== 设置 ======== -->
+  <section id="s-settings" class="section">
+    <div class="gametop">
+      <button class="btn ghost" onclick="go('home')">← 返回</button>
+    </div>
+    <h2>词库设置</h2>
+    <p class="sub" id="poolStatus"></p>
+    <div id="libList"></div>
+    <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap">
+      <button class="btn" onclick="newLib()">＋ 新建词库</button>
+      <button class="btn ghost" onclick="setPool('default')">☑ 用内置词库</button>
+      <button class="btn ghost" onclick="setPool('wrong')">❌ 只用错题</button>
+    </div>
+    <h2 style="margin-top:28px">导入到当前词库</h2>
+    <p class="sub">每行一个单词：英文 空格 中文，例如 <code>abandon 放弃</code>。导入会进到●使用中的词库</p>
+    <textarea id="importBox" rows="6" placeholder="abandon 放弃&#10;apple 苹果"></textarea>
+    <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap">
+      <button class="btn" onclick="importWords()">导入</button>
+      <button class="btn ghost" onclick="exportWords()">📋 复制当前词库</button>
+    </div>
+  </section>
+</main>
+
+<div class="overlay" id="overlay">
+  <div class="result-card">
+    <div class="big" id="rEmoji">🎉</div>
+    <h2 id="rTitle"></h2>
+    <p id="rMsg"></p>
+    <div class="result-actions">
+      <button class="btn" id="rAgain" onclick="restartGame()">再玩一局</button>
+      <button class="btn ghost" onclick="go('home')">回首页</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ================== 词库 ================== */
+const DEFAULT_WORDS = [
+  // 动物
+  ["cat","猫"],["dog","狗"],["bird","鸟"],["fish","鱼"],["tiger","老虎"],
+  ["panda","熊猫"],["monkey","猴子"],["rabbit","兔子"],["elephant","大象"],["lion","狮子"],
+  ["bear","熊"],["horse","马"],["duck","鸭子"],["pig","猪"],["cow","奶牛"],["sheep","绵羊"],
+  // 颜色
+  ["red","红色"],["blue","蓝色"],["green","绿色"],["yellow","黄色"],["black","黑色"],
+  ["white","白色"],["orange","橙色"],["pink","粉色"],["purple","紫色"],["brown","棕色"],
+  // 数字
+  ["one","一"],["two","二"],["three","三"],["four","四"],["five","五"],
+  ["six","六"],["seven","七"],["eight","八"],["nine","九"],["ten","十"],
+  // 水果食物
+  ["apple","苹果"],["banana","香蕉"],["pear","梨"],["peach","桃子"],["grape","葡萄"],
+  ["mango","芒果"],["watermelon","西瓜"],["strawberry","草莓"],["rice","米饭"],["egg","鸡蛋"],
+  ["milk","牛奶"],["bread","面包"],["cake","蛋糕"],["meat","肉"],["noodle","面条"],["candy","糖果"],
+  // 身体
+  ["eye","眼睛"],["ear","耳朵"],["nose","鼻子"],["mouth","嘴巴"],["hand","手"],
+  ["foot","脚"],["head","头"],["face","脸"],["arm","胳膊"],["leg","腿"],["hair","头发"],["tooth","牙齿"],
+  // 家庭
+  ["father","爸爸"],["mother","妈妈"],["brother","哥哥；弟弟"],["sister","姐姐；妹妹"],["grandpa","爷爷"],["grandma","奶奶"],["baby","婴儿"],
+  // 学校
+  ["book","书"],["pen","钢笔"],["pencil","铅笔"],["ruler","尺子"],["bag","书包"],
+  ["desk","课桌"],["chair","椅子"],["teacher","老师"],["student","学生"],["school","学校"],["classroom","教室"],["homework","作业"],["eraser","橡皮"],
+  // 日常用品
+  ["door","门"],["window","窗户"],["ball","球"],["toy","玩具"],["doll","洋娃娃"],["kite","风筝"],
+  ["clock","钟表"],["phone","电话"],["key","钥匙"],["umbrella","雨伞"],
+  // 衣物
+  ["coat","外套"],["shirt","衬衫"],["dress","连衣裙"],["hat","帽子"],["shoe","鞋子"],
+  // 动作
+  ["run","跑"],["jump","跳"],["walk","走路"],["sing","唱歌"],["dance","跳舞"],
+  ["read","读"],["write","写"],["swim","游泳"],["play","玩"],["eat","吃"],["drink","喝"],["sleep","睡觉"],
+  // 自然与形容词
+  ["sun","太阳"],["moon","月亮"],["star","星星"],["tree","树"],["flower","花"],["grass","草"],["water","水"],
+  ["big","大的"],["small","小的"],["tall","高的"],["short","矮的"],["long","长的"],["new","新的"],["old","旧的"],["happy","开心的"],["sad","伤心的"],
+];
+
+let libs = [];
+try { libs = JSON.parse(localStorage.getItem('wl_libs') || '[]'); } catch(e){ libs = []; }
+if (!libs.length) {
+  try {
+    const old = JSON.parse(localStorage.getItem('wl_custom') || '[]');
+    if (old.length) libs = [{ name: '我的词库', words: old }];
+  } catch(e){}
+  localStorage.removeItem('wl_custom');
+}
+let activeLib = -1;
+if (libs.length) {
+  const n = localStorage.getItem('wl_active');
+  activeLib = libs.findIndex(l => l.name === n);
+  if (activeLib < 0) activeLib = 0;
+}
+let wrongWords = [];
+try { wrongWords = JSON.parse(localStorage.getItem('wl_wrong') || '[]'); } catch(e){}
+let totalScore = parseInt(localStorage.getItem('wl_score') || '0');
+let streak = parseInt(localStorage.getItem('wl_streak') || '0');
+
+/* ================== 状态 ================== */
+let currentPool = localStorage.getItem('wl_pool') || 'default';  // default | custom | wrong
+if (!['default','custom','wrong'].includes(currentPool)) currentPool = 'custom';
+let currentGame = null;
+let reviewMode = false;
+let openLib = -1;   // 设置页中展开查看的词库索引
+
+function currentLib() { return activeLib >= 0 ? libs[activeLib] : null; }
+function allWords() {
+  if (currentPool === 'wrong') return wrongWords;
+  if (currentPool === 'custom') return currentLib() ? currentLib().words : [];
+  return DEFAULT_WORDS.slice();
+}
+
+/* ================== 持久化 ================== */
+function save() {
+  localStorage.setItem('wl_libs', JSON.stringify(libs));
+  localStorage.setItem('wl_active', currentLib() ? currentLib().name : '');
+  localStorage.setItem('wl_wrong', JSON.stringify(wrongWords));
+  localStorage.setItem('wl_score', String(totalScore));
+  localStorage.setItem('wl_streak', String(streak));
+  const t = document.getElementById('totalScore');
+  if (t) t.textContent = totalScore;
+  const s = document.getElementById('streak');
+  if (s) s.textContent = streak;
+  const w = document.getElementById('wordCount');
+  if (w) w.textContent = allWords().length;
+}
+function addScore(n) {
+  streak = n > 0 ? streak + 1 : 0;
+  totalScore += n;
+  save();
+}
+function resetScore() {
+  if (!confirm('确定重置所有分数和错题记录？')) return;
+  totalScore = 0; streak = 0; wrongWords = [];
+  save();
+  toast('已重置');
+}
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 1800);
+}
+function shuffle(a) {
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+function pickQuestion(count) {
+  const pool = allWords();
+  return shuffle(pool.slice()).slice(0, count);
+}
+function num2cn(n) {
+  const map = ['零','一','二','三','四','五','六','七','八','九'];
+  if (n < 10) return map[n];
+  if (n < 20) return '十' + (n > 10 ? map[n % 10] : '');
+  return map[Math.floor(n / 10)] + '十' + (n % 10 ? map[n % 10] : '');
+}
+
+/* ================== 页面切换 ================== */
+function go(name) {
+  document.getElementById('overlay').classList.remove('show');
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.getElementById('s-' + name).classList.add('active');
+  if (name === 'home') renderHome();
+  if (name === 'wordbook') renderWordbook();
+  if (name === 'settings') renderSettings();
+}
+function renderHome() {
+  const grid = document.getElementById('homeGrid');
+  grid.innerHTML = [
+    ['📝','四选一','看单词选正确释义，最经典的单词测验','眼力'],
+    ['✍️','拼写大师','看中文拼出英文，字母打乱等你排','记忆力'],
+    ['🃏','记忆翻牌','找出配对的单词和释义，考验记忆力','配对'],
+    ['🏗️','单词救援','猜错一次搭一块脚手架，救下每个单词','猜词'],
+    ['🎴','闪卡复习','快速浏览单词，看一遍过一遍','复习'],
+  ].map((g, i) =>
+    `<div class="game-card" onclick="startGame(${i})">
+       <div class="icon">${g[0]}</div><h3>${g[1]}</h3>
+       <p>${g[2]}</p><span class="tag">${g[3]}</span>
+     </div>`).join('');
+  save();
+}
+function startGame(i) {
+  currentGame = i;
+  const names = ['quiz','spell','memory','hangman','flash'];
+  go(names[i]);
+  const fns = [startQuiz, startSpell, startMemory, startHangman, startFlash];
+  fns[i]();
+}
+
+/* ================== 游戏1：四选一 ================== */
+let quizState = null;
+function startQuiz() {
+  const qs = pickQuestion(8);
+  if (!qs.length) return noWords();
+  quizState = { qs, idx: 0, correct: 0, wrong: 0 };
+  document.getElementById('quizCorrect').textContent = 0;
+  document.getElementById('quizWrong').textContent = 0;
+  updateQuizProgress();
+  renderQuizQuestion();
+}
+function renderQuizQuestion() {
+  const st = quizState;
+  if (st.idx >= st.qs.length) return finishGame({ emoji:'🏆', title:'完成！', msg:`答对 <b>${st.correct}</b> 题，答错 <b>${st.wrong}</b> 题` });
+  const [en, zh] = st.qs[st.idx];
+  const others = shuffle(allWords().filter(w => w[1] !== zh)).slice(0, 3).map(w => w[1]);
+  const opts = shuffle([zh, ...others]);
+  st.answered = false;
+  document.getElementById('quizArea').innerHTML = `
+    <div class="quiz-word">${en}</div>
+    <div class="hint">选出正确的释义（第 ${num2cn(st.idx + 1)} 题 / 共 ${num2cn(st.qs.length)} 题）</div>
+    <div class="options">
+      ${opts.map(o => `<button class="opt" data-v="${o}" onclick="answerQuiz(this, '${o.replace(/'/g, "\\'")}')">${o}</button>`).join('')}
+    </div>`;
+  updateQuizProgress();
+}
+function answerQuiz(btn, val) {
+  const st = quizState;
+  if (st.answered) return;
+  st.answered = true;
+  const [en, zh] = st.qs[st.idx];
+  const correct = val === zh;
+  if (correct) { st.correct++; addScore(2); }
+  else { st.wrong++; addScore(-1); markWrong(en, zh); }
+  document.querySelectorAll('#quizArea .opt').forEach(b => {
+    b.disabled = true;
+    if (b.dataset.v === zh) b.classList.add('correct');
+    if (b === btn && !correct) b.classList.add('wrong');
+  });
+  document.getElementById('quizCorrect').textContent = st.correct;
+  document.getElementById('quizWrong').textContent = st.wrong;
+  setTimeout(() => { st.idx++; renderQuizQuestion(); }, correct ? 500 : 1200);
+}
+function updateQuizProgress() {
+  if (!quizState) return;
+  const p = quizState.idx / quizState.qs.length * 100;
+  document.getElementById('quizProgress').style.width = p + '%';
+}
+
+/* ================== 游戏2：拼写大师 ================== */
+let spellState = null;
+function startSpell() {
+  const qs = pickQuestion(8);
+  if (!qs.length) return noWords();
+  spellState = { qs, idx: 0, correct: 0, wrong: 0 };
+  document.getElementById('spellCorrect').textContent = 0;
+  document.getElementById('spellWrong').textContent = 0;
+  updateSpellProgress();
+  renderSpellQuestion();
+}
+function renderSpellQuestion() {
+  const st = spellState;
+  if (st.idx >= st.qs.length) return finishGame({ emoji:'🏆', title:'完成！', msg:`拼对 <b>${st.correct}</b> 个，拼错 <b>${st.wrong}</b> 个` });
+  const [en, zh] = st.qs[st.idx];
+  const letters = shuffle(en.split(''));
+  st.answer = en; st.typed = []; st.revealed = false;
+  document.getElementById('spellArea').innerHTML = `
+    <div class="spell-wrap">
+      <div class="spell-meaning">${zh}<br><span style="color:var(--muted);font-size:12px">提示：共 ${en.length} 个字母，第 ${num2cn(st.idx + 1)} / ${num2cn(st.qs.length)} 题</span></div>
+      <div class="letter-row" id="letterRow"></div>
+      <div class="letter-pool" id="letterPool">
+        ${letters.map((l, i) => `<div class="letter-tile" data-i="${i}" data-l="${l}" onclick="pickLetter(this)">${l}</div>`).join('')}
+      </div>
+      <button class="btn ghost" id="giveUpBtn" onclick="revealSpell()">💡 提示（扣 1 分）</button>
+    </div>`;
+  updateSpellProgress();
+}
+function renderTyped() {
+  const st = spellState;
+  const row = document.getElementById('letterRow');
+  row.innerHTML = st.answer.split('').map((_, i) =>
+    `<div class="letter-box ${i < st.typed.length ? 'filled' : ''}">${i < st.typed.length ? st.typed[i] : ''}</div>`).join('');
+}
+function revealSpell() {
+  const st = spellState;
+  if (st.revealed) return;
+  st.revealed = true;
+  addScore(-1);
+  finishRound(false, true);
+}
+function checkSpell() {
+  const st = spellState;
+  if (st.typed.join('') === st.answer) { addScore(3); st.correct++; finishRound(true); }
+}
+function finishRound(correct, revealed) {
+  const st = spellState;
+  if (revealed && st.revealed && st.idx >= st.qs.length) return;
+  if (!revealed) {
+    const [en, zh] = st.qs[st.idx];
+    if (!correct) { st.wrong++; markWrong(en, zh); }
+    document.getElementById('spellCorrect').textContent = st.correct;
+    document.getElementById('spellWrong').textContent = st.wrong;
+  }
+  const row = document.getElementById('letterRow');
+  if (row) {
+    const [en] = st.qs[st.idx];
+    row.innerHTML = en.split('').map(l =>
+      `<div class="letter-box ${correct ? 'correct' : 'blank'}">${l}</div>`).join('');
+  }
+  document.querySelectorAll('#letterPool .letter-tile').forEach(t => t.style.pointerEvents = 'none');
+  const gb = document.getElementById('giveUpBtn');
+  if (gb) gb.disabled = true;
+  setTimeout(() => {
+    st.idx++;
+    if (st.idx >= st.qs.length) finishGame({ emoji:'🏆', title:'完成！', msg:`拼对 <b>${st.correct}</b> 个，拼错 <b>${st.wrong}</b> 个` });
+    else renderSpellQuestion();
+  }, 1000);
+}
+// 点字母时若排满则自动判定
+function pickLetter(el) {
+  const st = spellState;
+  if (st.revealed || el.classList.contains('used')) return;
+  el.classList.add('used');
+  st.typed.push(el.dataset.l);
+  renderTyped();
+  if (st.typed.length === st.answer.length) checkSpell();
+}
+function updateSpellProgress() {
+  if (!spellState) return;
+  const p = spellState.idx / spellState.qs.length * 100;
+  document.getElementById('spellProgress').style.width = p + '%';
+}
+
+/* ================== 游戏3：记忆翻牌 ================== */
+let memState = null;
+function startMemory() {
+  const qs = pickQuestion(6);
+  if (!qs.length) return noWords();
+  // 每张牌有 type: en/zh 和 id
+  const cards = [];
+  qs.forEach((w, idx) => {
+    cards.push({ type:'en', id: idx, text: w[0] });
+    cards.push({ type:'zh', id: idx, text: w[1] });
+  });
+  cards.forEach(c => c.key = c.type + '-' + c.id);
+  memState = { cards: shuffle(cards), open: [], matched: 0, tries: 0 };
+  document.getElementById('memInfo').textContent = '0';
+  renderMemory();
+}
+function renderMemory() {
+  const st = memState;
+  document.getElementById('memoryArea').innerHTML = `
+    <p class="sub">翻转配对的单词与释义，全部配对成功即可过关</p>
+    <div class="memory-grid">${st.cards.map((c, i) => `
+      <div class="mcard" id="mc${i}" data-i="${i}" onclick="flipCard(this)">
+        <div class="mcard-inner">
+          <div class="mcard-front">🀄</div>
+          <div class="mcard-back">${c.text}</div>
+        </div>
+      </div>`).join('')}
+    </div>`;
+}
+function flipCard(el) {
+  const st = memState;
+  const i = parseInt(el.dataset.i);
+  const card = st.cards[i];
+  if (el.classList.contains('flipped') || el.classList.contains('matched')) return;
+  if (st.open.length >= 2) return;
+  el.classList.add('flipped');
+  st.open.push({ i, card });
+  if (st.open.length === 2) {
+    st.tries++;
+    const [a, b] = st.open;
+    const matched = a.card.id === b.card.id && a.card.type !== b.card.type;
+    if (matched) {
+      document.getElementById('mc' + a.i).classList.add('matched');
+      document.getElementById('mc' + b.i).classList.add('matched');
+      st.matched++;
+      addScore(2);
+      st.open = [];
+      document.getElementById('memInfo').textContent = st.matched;
+      if (st.matched === 6) {
+        finishGame({ emoji:'🎉', title:'全部配对成功！', msg:`用了 <b>${st.tries}</b> 次尝试` });
+      }
+    } else {
+      setTimeout(() => {
+        document.getElementById('mc' + a.i).classList.remove('flipped');
+        document.getElementById('mc' + b.i).classList.remove('flipped');
+        st.open = [];
+      }, 700);
+    }
+  }
+}
+
+/* ================== 游戏4：单词救援（猜词） ================== */
+let hmState = null;
+const LS = 6;
+function startHangman() {
+  const qs = pickQuestion(6);
+  if (!qs.length) return noWords();
+  hmState = { qs, idx: 0, wins: 0, losses: 0 };
+  hmNewRound();
+}
+function hmNewRound() {
+  const st = hmState;
+  if (!st) return;
+  if (st.idx >= st.qs.length) return finishGame({ emoji:'🏆', title:'完成！', msg:`救下 <b>${st.wins}</b> 个，牺牲 <b>${st.losses}</b> 个` });
+  const [en, zh] = st.qs[st.idx];
+  st.word = en; st.guessed = []; st.lives = LS;
+  document.getElementById('hmLives').textContent = en.length > 8 ? LS + 2 : LS;
+  st.lives = en.length > 8 ? LS + 2 : LS;
+  hmRender(en, zh);
+}
+function hmRender(en, zh) {
+  const st = hmState;
+  const shown = en.split('').map(l => st.guessed.includes(l) ? l : '_').join('');
+  const wrongLetters = st.guessed.filter(l => !en.includes(l));
+  document.getElementById('hangmanArea').innerHTML = `
+    <div class="hangman-box">
+      <svg class="hangman-svg" width="180" height="150" viewBox="0 0 180 150">
+        <g stroke="#94a3b8" stroke-width="4" fill="none" stroke-linecap="round">
+          <line x1="20" y1="140" x2="140" y2="140" stroke-width="5"/>
+          <line x1="50" y1="140" x2="50" y2="20"/>
+          <line x1="50" y1="20" x2="110" y2="20"/>
+          <line x1="110" y1="20" x2="110" y2="40"/>
+          ${st.lives <= 5 ? '<circle cx="110" cy="52" r="12"/>' : ''}
+          ${st.lives <= 4 ? '<line x1="110" y1="64" x2="110" y2="100"/>' : ''}
+          ${st.lives <= 3 ? '<line x1="110" y1="72" x2="92" y2="88"/>' : ''}
+          ${st.lives <= 2 ? '<line x1="110" y1="72" x2="128" y2="88"/>' : ''}
+          ${st.lives <= 1 ? '<line x1="110" y1="100" x2="94" y2="122"/>' : ''}
+          ${st.lives <= 0 ? '<line x1="110" y1="100" x2="126" y2="122"/>' : ''}
+        </g>
+      </svg>
+      <div style="color:var(--muted);font-size:14px">${zh} <span style="font-size:12px">（共 ${en.length} 个字母）</span></div>
+      <div class="word-blanks">${en.split('').map(l =>
+        `<div class="blank">${st.guessed.includes(l) ? l : ''}</div>`).join('')}</div>
+      <div>猜一个字母，别让小人被吊起来 🪢</div>
+      <div class="used-tiles">
+        ${wrongLetters.map(l => `<span class="used-tile bad">${l}</span>`).join('')}
+        ${st.guessed.filter(l => en.includes(l)).map(l => `<span class="used-tile">${l}</span>`).join('')}
+      </div>
+      <div id="hmLetters" style="display:flex;gap:4px;justify-content:center;flex-wrap:wrap;max-width:430px;margin:0 auto">
+        ${'abcdefghijklmnopqrstuvwxyz'.split('').map(l => {
+          const used = st.guessed.includes(l);
+          const ok = en.includes(l) && used;
+          return `<button class="letter-tile" style="width:32px;height:34px;font-size:14px${used ? ';opacity:.25;pointer-events:none' : ''}${ok ? ';border-color:var(--ok)' : ''}" onclick="hmGuess('${l}')">${l}</button>`;
+        }).join('')}
+      </div>
+    </div>`;
+}
+function hmGuess(l) {
+  const st = hmState;
+  if (st.guessed.includes(l)) return;
+  st.guessed.push(l);
+  const hit = st.word.includes(l);
+  if (!hit) {
+    st.lives--;
+    if (st.lives <= 0) {
+      addScore(-2);
+      st.losses++;
+      markWrong(st.word, st.qs[st.idx][1]);
+      hmOver();
+      return;
+    }
+  } else if (st.word.split('').every(c => st.guessed.includes(c))) {
+    addScore(3);
+    st.wins++;
+    hmOver(true);
+    return;
+  }
+  document.getElementById('hmLives').textContent = st.lives;
+  hmRender(st.word, st.qs[st.idx][1]);
+}
+function hmOver(win) {
+  const st = hmState;
+  const en = st.word;
+  const zh = st.qs[st.idx][1];
+  document.getElementById('hangmanArea').innerHTML = `
+    <div class="hangman-box" style="text-align:center">
+      <div style="font-size:52px">${win ? '🎉' : '💔'}</div>
+      <div class="quiz-word" style="font-size:30px">${en}</div>
+      <div class="hint">${zh}</div>
+      <button class="btn" onclick="hmNext()">${win ? '下一个' : '看看下一个'}</button>
+    </div>`;
+}
+function hmNext() {
+  hmState.idx++;
+  const st = hmState;
+  if (st.idx >= st.qs.length) finishGame({ emoji:'🏆', title:'完成！', msg:`救下 <b>${st.wins}</b> 个，牺牲 <b>${st.losses}</b> 个` });
+  else hmNewRound();
+}
+
+/* ================== 游戏5：闪卡复习 ================== */
+let flashState = null;
+let flashFlipped = false;
+function startFlash() {
+  const qs = pickQuestion(10);
+  if (!qs.length) return noWords();
+  flashState = { qs, idx: 0, known: 0, flipped: false };
+  flashPane();
+}
+function flashPane() {
+  const st = flashState;
+  const [en, zh] = st.qs[st.idx];
+  document.getElementById('flashInfo').textContent = `📇 第 ${st.idx + 1} / ${st.qs.length} 张 · 认识 ${st.known}`;
+  document.getElementById('flashArea').innerHTML = `
+    <p class="sub">看英文回忆中文，或点击翻面看释义；真心记不住就点"没记住"</p>
+    <div style="max-width:480px;margin:0 auto;background:var(--card);box-shadow:var(--shadow);border-radius:20px;padding:40px 24px;cursor:pointer" onclick="flashFlip()">
+      <div class="flash-big" id="flashWord" style="font-size:34px">${en}</div>
+      <div class="hint" id="flashZh" style="display:none">${zh}</div>
+      <div style="color:var(--muted);font-size:12px;margin-top:14px;text-align:center">👆 点击卡片翻面</div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:center;margin-top:20px">
+      <button class="btn ghost" onclick="flashKnown(false)">😵 没记住</button>
+      <button class="btn ok" onclick="flashKnown(true)">✅ 认识</button>
+    </div>`;
+}
+function flashFlip() {
+  const st = flashState;
+  if (st.flipped) return;
+  st.flipped = true;
+  const zh = document.getElementById('flashZh');
+  const word = document.getElementById('flashWord');
+  zh.style.display = 'block';
+  word.style.color = 'var(--muted)';
+  word.style.fontSize = '18px';
+}
+function flashKnown(known) {
+  const st = flashState;
+  if (!known) { markWrong(st.qs[st.idx][0], st.qs[st.idx][1]); addScore(-1); }
+  else { st.known++; addScore(1); }
+  st.idx++;
+  if (st.idx >= st.qs.length) {
+    finishGame({ emoji:'🎉', title:'复习完成！', msg:`认识 <b>${st.known}</b> 张，待复习 <b>${st.qs.length - st.known}</b> 张` });
+  } else { st.flipped = false; flashPane(); }
+}
+
+/* ================== 单词本 ================== */
+function renderWordbook() {
+  const list = allWords();
+  document.getElementById('builtinCount').textContent = DEFAULT_WORDS.length;
+  const el = document.getElementById('wbList');
+  if (!list.length) { el.innerHTML = '<p class="sub">暂无单词</p>'; return; }
+  el.innerHTML = list.map(w =>
+    `<div class="wb-item"><div><div class="en">${w[0]}</div><div class="zh">${w[1]}</div></div>
+     ${isCustom(w) || currentPool === 'wrong' ? `<button class="del" onclick="removeWord('${w[0]}')" title="删除">✕</button>` : '<span style="color:#d1d5db">☑</span>'}</div>`).join('');
+}
+function isCustom(w) {
+  const lib = currentLib();
+  return lib ? lib.words.some(c => c[0] === w[0]) : false;
+}
+function addWord() {
+  const lib = currentLib();
+  if (!lib) return toast('请先在设置里新建或选择一个词库');
+  const en = document.getElementById('newEn').value.trim();
+  const zh = document.getElementById('newZh').value.trim();
+  if (!en || !zh) return toast('请填写单词和释义');
+  if (!/^[A-Za-z][A-Za-z\-' ]*$/.test(en)) return toast('英文单词格式不对');
+  lib.words.push([en, zh]);
+  save();
+  document.getElementById('newEn').value = '';
+  document.getElementById('newZh').value = '';
+  renderWordbook();
+  toast('已添加');
+}
+function removeWord(en) {
+  const lib = currentLib();
+  if (lib) lib.words = lib.words.filter(w => w[0] !== en);
+  wrongWords = wrongWords.filter(w => w[0] !== en);
+  save();
+  renderWordbook();
+  toast('已删除');
+}
+function markWrong(en, zh) {
+  if (!wrongWords.some(w => w[0] === en)) wrongWords.push([en, zh]);
+  else if (wrongWords.length > 100) wrongWords.shift();
+  save();
+}
+function setPool(p) {
+  currentPool = p;
+  localStorage.setItem('wl_pool', p);
+  save();
+  toast({
+    default: '已使用内置词库',
+    custom: currentLib() ? `已使用词库「${currentLib().name}」` : '未选择词库',
+    wrong: '已使用错题词库'
+  }[p] || '');
+  renderSettings();
+}
+function renderSettings() {
+  const el = document.getElementById('libList');
+  if (!el) return;
+  el.innerHTML = libs.map((l, i) => `
+    <div class="lib-card">
+      <div class="lib-row ${i === activeLib ? 'on' : ''}" onclick="useLib(${i})">
+        <div>
+          <div class="lib-name">${l.name}${i === activeLib ? ' <span style="color:var(--primary);font-size:12px">● 使用中</span>' : ''}</div>
+          <div class="cnt">${l.words.length} 词${i === activeLib && currentPool !== 'custom' ? '（未启用）' : ''}</div>
+        </div>
+        <div style="display:flex;gap:6px" onclick="event.stopPropagation()">
+          <button class="mini ${openLib === i ? 'on' : ''}" onclick="toggleLib(${i})" title="查看内容">👁</button>
+          <button class="mini" onclick="renameLib(${i})" title="重命名">✎</button>
+          <button class="mini del" onclick="delLib(${i})" title="删除">✕</button>
+        </div>
+      </div>
+      ${openLib === i ? `<div class="lib-words">${l.words.length ? l.words.map(w => `<span class="chip">${w[0]}&nbsp;${w[1]}</span>`).join('') : '<span style="color:var(--muted)">（空词库）</span>'}</div>` : ''}
+    </div>`).join('') || '<p class="sub" style="padding:8px 0">还没有词库，点"＋ 新建词库"开始</p>';
+  const map = {
+    default: `内置词库（${DEFAULT_WORDS.length} 词）`,
+    custom: currentLib() ? `「${currentLib().name}」${currentLib().words.length} 词` : '未选择词库',
+    wrong: `错题（${wrongWords.length} 词）`
+  };
+  document.getElementById('poolStatus').textContent = '游戏当前使用：' + (map[currentPool] || '');
+}
+function useLib(i) {
+  activeLib = i;
+  setPool('custom');
+}
+function toggleLib(i) {
+  openLib = openLib === i ? -1 : i;
+  renderSettings();
+}
+function newLib() {
+  const name = prompt('新词库名称：', '我的词库' + (libs.length ? ' ' + (libs.length + 1) : ''));
+  if (!name || !name.trim()) return;
+  libs.push({ name: name.trim(), words: [] });
+  activeLib = libs.length - 1;
+  setPool('custom');
+  save();
+  toast(`已创建词库「${name.trim()}」`);
+}
+function renameLib(i) {
+  const name = prompt('新名称：', libs[i].name);
+  if (!name || !name.trim()) return;
+  libs[i].name = name.trim();
+  save();
+  renderSettings();
+  toast('已重命名');
+}
+function delLib(i) {
+  if (!confirm(`删除词库「${libs[i].name}」（${libs[i].words.length} 词）？`)) return;
+  libs.splice(i, 1);
+  if (activeLib === i) {
+    activeLib = libs.length ? 0 : -1;
+    if (!libs.length && currentPool === 'custom') currentPool = 'default';
+  } else if (activeLib > i) activeLib--;
+  save();
+  renderSettings();
+  toast('已删除');
+}
+function importWords() {
+  const lib = currentLib();
+  if (!lib) return toast('请先新建或选择一个词库');
+  const text = document.getElementById('importBox').value.trim();
+  if (!text) return toast('请粘贴单词，每行：英文 空格 中文');
+  let added = 0, skipped = 0;
+  text.split(/\r?\n/).forEach(line => {
+    line = line.trim();
+    if (!line) return;
+    const i = line.search(/\s/);
+    const en = (i < 0 ? line : line.slice(0, i)).trim();
+    const zh = (i < 0 ? '' : line.slice(i + 1)).trim();
+    if (!/^[A-Za-z][A-Za-z\-' ]*$/.test(en) || !zh) { skipped++; return; }
+    if (!lib.words.some(w => w[0] === en)) { lib.words.push([en, zh]); added++; }
+  });
+  save();
+  document.getElementById('importBox').value = '';
+  renderSettings();
+  toast(`导入 ${added} 个单词到「${lib.name}」${skipped ? `，跳过 ${skipped} 行（格式不对或重复）` : ''}`);
+}
+function exportWords() {
+  const words = allWords();
+  const text = words.map(w => w.join(' ')).join('\n');
+  (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject())
+    .then(() => toast(`已复制 ${words.length} 个单词`))
+    .catch(() => {
+      const ta = document.createElement('textarea');
+      ta.value = text; document.body.appendChild(ta); ta.select();
+      document.execCommand('copy'); ta.remove();
+      toast(`已复制 ${words.length} 个单词`);
+    });
+}
+function noWords() {
+  toast('当前词库为空，请切换到内置词库或添加单词');
+}
+function startReview() {
+  currentGame = 4;
+  go('flash');
+  startFlash();
+}
+
+/* ================== 结算 ================== */
+function finishGame(r) {
+  document.getElementById('rEmoji').textContent = r.emoji;
+  document.getElementById('rTitle').textContent = r.title;
+  document.getElementById('rMsg').innerHTML = r.msg;
+  document.getElementById('overlay').classList.add('show');
+}
+function restartGame() {
+  document.getElementById('overlay').classList.remove('show');
+  if (currentGame !== null) startGame(currentGame);
+}
+document.getElementById('overlay').addEventListener('click', e => {
+  if (e.target === document.getElementById('overlay')) document.getElementById('overlay').classList.remove('show');
+});
+
+/* ================== 启动 ================== */
+renderHome();
+</script>
+</body>
+</html>

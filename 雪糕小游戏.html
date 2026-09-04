@@ -1,0 +1,1166 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>接雪糕大作战</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; user-select: none; }
+body {
+  background: #1a1a2e;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  font-family: Arial, sans-serif;
+  overflow: hidden;
+}
+#gameContainer {
+  position: relative;
+  width: 500px;
+  height: 700px;
+  background: linear-gradient(180deg, #87CEEB 0%, #E0F7FA 60%, #A5D6A7 100%);
+  border-radius: 16px;
+  box-shadow: 0 0 40px rgba(0,0,0,0.5);
+  cursor: none;
+  overflow: hidden;
+}
+canvas {
+  display: block;
+  border-radius: 16px;
+}
+#startScreen, #gameOverScreen {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  background: rgba(0,0,0,0.6);
+  border-radius: 16px;
+  z-index: 10;
+}
+#gameOverScreen { display: none; }
+h1 { color: #fff; font-size: 42px; margin-bottom: 10px; text-shadow: 2px 2px 4px rgba(0,0,0,0.5); }
+.subtitle { color: #FFD700; font-size: 18px; margin-bottom: 30px; }
+.btn {
+  padding: 16px 48px;
+  font-size: 22px;
+  border: none;
+  border-radius: 50px;
+  cursor: pointer;
+  font-weight: bold;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.btn:hover { transform: scale(1.05); }
+.btn-start { background: linear-gradient(135deg, #FF6B6B, #FFE66D); color: #333; box-shadow: 0 4px 20px rgba(255,107,107,0.4); }
+.btn-restart { background: linear-gradient(135deg, #4ECDC4, #44B3AB); color: #fff; box-shadow: 0 4px 20px rgba(78,205,196,0.4); }
+.final-score { color: #fff; font-size: 28px; margin: 20px 0; }
+</style>
+</head>
+<body>
+<div id="gameContainer">
+  <canvas id="gameCanvas" width="500" height="700"></canvas>
+  <div id="startScreen">
+    <h1>🍦 接雪糕</h1>
+    <div class="subtitle">← 移动鼠标接住雪糕！<br>💩 大便 + ❌ 漏接 = 游戏结束</div>
+    <button class="btn btn-start" onclick="startGame()">开始游戏</button>
+  </div>
+  <div id="gameOverScreen">
+    <h1>😵 游戏结束</h1>
+    <div class="final-score" id="finalScore">得分: 0</div>
+    <button class="btn btn-restart" onclick="restartGame()">再来一次</button>
+  </div>
+</div>
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const W = 500, H = 700;
+
+// ========== 音效系统 ==========
+let audioCtx = null;
+let bgmPlaying = false;
+
+function initAudio() {
+  if (audioCtx) return;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+}
+
+function playNote(freq, duration, type, gainVal, when) {
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = type || 'sine';
+  osc.frequency.value = freq;
+  gain.gain.setValueAtTime(gainVal, when);
+  gain.gain.exponentialRampToValueAtTime(0.001, when + duration);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start(when);
+  osc.stop(when + duration);
+}
+
+let bgmInterval = null;
+function startBGM() {
+  if (bgmPlaying) return;
+  bgmPlaying = true;
+  initAudio();
+  const notes = [
+    [523, 0], [587, 1], [659, 2], [784, 3],
+    [659, 4], [587, 5], [523, 6], [0, 7],
+    [659, 8], [698, 9], [784, 10], [880, 11],
+    [784, 12], [698, 13], [659, 14], [0, 15],
+    [784, 16], [880, 17], [784, 18], [698, 19],
+    [659, 20], [587, 21], [523, 22], [0, 23],
+    [392, 24], [440, 25], [523, 26], [587, 27],
+    [659, 28], [0, 29], [0, 30], [0, 31]
+  ];
+  function playLoop() {
+    if (!bgmPlaying) return;
+    const now = audioCtx.currentTime;
+    const bpm = 0.15;
+    for (const [freq, beat] of notes) {
+      if (freq > 0) playNote(freq, bpm * 0.9, 'square', 0.04, now + beat * bpm);
+    }
+    bgmInterval = setTimeout(playLoop, notes.length * bpm * 1000);
+  }
+  playLoop();
+}
+
+function stopBGM() {
+  bgmPlaying = false;
+  clearTimeout(bgmInterval);
+}
+
+function playEatSFX() {
+  initAudio();
+  const now = audioCtx.currentTime;
+  playNote(880, 0.1, 'sine', 0.3, now);
+  playNote(1108, 0.1, 'sine', 0.3, now + 0.06);
+  playNote(1320, 0.15, 'sine', 0.25, now + 0.12);
+}
+
+function playPoofSFX() {
+  initAudio();
+  const now = audioCtx.currentTime;
+  playNote(200, 0.3, 'sawtooth', 0.25, now);
+  playNote(150, 0.3, 'sawtooth', 0.25, now + 0.05);
+  playNote(100, 0.4, 'sawtooth', 0.2, now + 0.1);
+  for (let i = 0; i < 8; i++) {
+    playNote(80 + Math.random() * 300, 0.15, 'square', 0.08, now + i * 0.03);
+  }
+}
+
+function playMissSFX() {
+  initAudio();
+  const now = audioCtx.currentTime;
+  playNote(400, 0.15, 'square', 0.15, now);
+  playNote(300, 0.2, 'square', 0.15, now + 0.08);
+  playNote(200, 0.3, 'square', 0.15, now + 0.16);
+  playNote(100, 0.4, 'sine', 0.12, now + 0.25);
+}
+
+function playLevelUpSFX() {
+  initAudio();
+  const now = audioCtx.currentTime;
+  playNote(523, 0.12, 'sine', 0.2, now);
+  playNote(659, 0.12, 'sine', 0.2, now + 0.1);
+  playNote(784, 0.12, 'sine', 0.2, now + 0.2);
+  playNote(1047, 0.25, 'sine', 0.25, now + 0.3);
+}
+
+// ========== 背景系统 ==========
+const levels = [
+  {
+    name: '春日花园',
+    sky: ['#87CEEB', '#B5EAD7', '#E8F5E9'],
+    grass: '#7CB342',
+    grass2: '#8BC34A',
+    clouds: 5,
+    flowers: 8,
+    butterflies: 3,
+    stars: 0,
+    moon: false,
+    rainbow: false
+  },
+  {
+    name: '夏日黄昏',
+    sky: ['#FF9A9E', '#FECFEF', '#FFD1FF'],
+    grass: '#66BB6A',
+    grass2: '#81C784',
+    clouds: 4,
+    flowers: 6,
+    butterflies: 2,
+    stars: 2,
+    moon: false,
+    rainbow: false
+  },
+  {
+    name: '星空梦境',
+    sky: ['#1a1a3e', '#2d2b55', '#4a3f6b'],
+    grass: '#4A6741',
+    grass2: '#5D7B52',
+    clouds: 2,
+    flowers: 4,
+    butterflies: 1,
+    stars: 30,
+    moon: true,
+    rainbow: false
+  },
+  {
+    name: '彩虹乐园',
+    sky: ['#FF6B6B', '#FFE66D', '#4ECDC4', '#A8E6CF', '#DDA0DD'],
+    grass: '#FFB7B2',
+    grass2: '#FFDAC1',
+    clouds: 3,
+    flowers: 10,
+    butterflies: 4,
+    stars: 0,
+    moon: false,
+    rainbow: true
+  },
+  {
+    name: '极光仙境',
+    sky: ['#0B0B2B', '#1B1B4B', '#2E8B57', '#20B2AA', '#87CEEB'],
+    grass: '#2E7D32',
+    grass2: '#43A047',
+    clouds: 1,
+    flowers: 6,
+    butterflies: 3,
+    stars: 40,
+    moon: true,
+    rainbow: false
+  }
+];
+
+// 背景装饰对象
+let bgDecorations = [];
+let currentLevel = 0;
+let levelTransition = 0; // 0-1 transition progress
+let prevBgColors = levels[0].sky;
+let nextBgColors = levels[0].sky;
+let levelUpFlash = 0;
+
+function initBgDecorations(levelIdx) {
+  const lv = levels[levelIdx];
+  bgDecorations = [];
+
+  // 云朵
+  for (let i = 0; i < lv.clouds; i++) {
+    bgDecorations.push({
+      type: 'cloud',
+      x: Math.random() * W,
+      y: 40 + Math.random() * 120,
+      w: 60 + Math.random() * 80,
+      speed: 0.2 + Math.random() * 0.3,
+      opacity: 0.6 + Math.random() * 0.4
+    });
+  }
+
+  // 花朵
+  for (let i = 0; i < lv.flowers; i++) {
+    const colors = ['#FF6B6B', '#FFE66D', '#FF9AA2', '#FFB7B2', '#E2F0CB', '#FFDAC1', '#DDA0DD'];
+    bgDecorations.push({
+      type: 'flower',
+      x: 20 + Math.random() * (W - 40),
+      y: H - 40 - Math.random() * 30,
+      size: 4 + Math.random() * 5,
+      color: colors[Math.floor(Math.random() * colors.length)],
+      sway: Math.random() * Math.PI * 2
+    });
+  }
+
+  // 蝴蝶
+  for (let i = 0; i < lv.butterflies; i++) {
+    bgDecorations.push({
+      type: 'butterfly',
+      x: Math.random() * W,
+      y: 150 + Math.random() * 200,
+      speed: 0.5 + Math.random() * 0.5,
+      radius: 30 + Math.random() * 40,
+      angle: Math.random() * Math.PI * 2,
+      color: ['#FF6B6B', '#FFE66D', '#4ECDC4', '#DDA0DD'][Math.floor(Math.random() * 4)],
+      wingPhase: Math.random() * Math.PI * 2
+    });
+  }
+
+  // 星星
+  if (lv.stars > 0) {
+    for (let i = 0; i < lv.stars; i++) {
+      bgDecorations.push({
+        type: 'star',
+        x: Math.random() * W,
+        y: Math.random() * H * 0.6,
+        size: 1 + Math.random() * 2.5,
+        twinkle: Math.random() * Math.PI * 2,
+        twinkleSpeed: 0.02 + Math.random() * 0.03
+      });
+    }
+  }
+
+  // 月亮
+  if (lv.moon) {
+    bgDecorations.push({
+      type: 'moon',
+      x: W - 80,
+      y: 60
+    });
+  }
+
+  // 彩虹
+  if (lv.rainbow) {
+    bgDecorations.push({
+      type: 'rainbow',
+      x: W / 2,
+      y: H * 0.65
+    });
+  }
+}
+
+function drawBackground() {
+  const lv = levels[currentLevel];
+
+  // 混合天空颜色
+  let skyColors;
+  if (levelTransition < 1 && prevBgColors && nextBgColors) {
+    const t = levelTransition;
+    skyColors = prevBgColors.map((c, i) => {
+      const nc = nextBgColors[i] || nextBgColors[nextBgColors.length - 1];
+      return lerpColor(c, nc, t);
+    });
+  } else {
+    skyColors = lv.sky;
+  }
+
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  const step = 1 / (skyColors.length - 1);
+  for (let i = 0; i < skyColors.length; i++) {
+    grad.addColorStop(i * step, skyColors[i]);
+  }
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  // 彩虹
+  if (lv.rainbow) {
+    const r = bgDecorations.find(d => d.type === 'rainbow');
+    if (r) {
+      const colors = ['#FF6B6B', '#FFA500', '#FFE66D', '#4ECDC4', '#A8E6CF', '#DDA0DD'];
+      for (let i = colors.length - 1; i >= 0; i--) {
+        ctx.beginPath();
+        ctx.arc(r.x, r.y, 180 - i * 12, Math.PI * 1.15, Math.PI * 1.85);
+        ctx.strokeStyle = colors[i];
+        ctx.lineWidth = 10;
+        ctx.globalAlpha = 0.3;
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  // 草地
+  ctx.fillStyle = lv.grass;
+  ctx.beginPath();
+  ctx.moveTo(0, H - 15);
+  ctx.quadraticCurveTo(W * 0.25, H - 30, W * 0.5, H - 15);
+  ctx.quadraticCurveTo(W * 0.75, H, W, H - 20);
+  ctx.lineTo(W, H);
+  ctx.lineTo(0, H);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = lv.grass2;
+  ctx.beginPath();
+  ctx.moveTo(0, H - 5);
+  ctx.quadraticCurveTo(W * 0.3, H - 20, W * 0.6, H - 5);
+  ctx.quadraticCurveTo(W * 0.8, H - 10, W, H - 8);
+  ctx.lineTo(W, H);
+  ctx.lineTo(0, H);
+  ctx.closePath();
+  ctx.fill();
+
+  // 装饰物
+  for (const d of bgDecorations) {
+    switch (d.type) {
+      case 'cloud':
+        drawCloud(d);
+        break;
+      case 'flower':
+        drawFlower(d);
+        break;
+      case 'butterfly':
+        drawButterfly(d);
+        break;
+      case 'star':
+        drawStar(d);
+        break;
+      case 'moon':
+        drawMoon(d);
+        break;
+    }
+  }
+}
+
+function drawCloud(d) {
+  ctx.fillStyle = `rgba(255,255,255,${d.opacity})`;
+  ctx.beginPath();
+  ctx.arc(d.x, d.y, d.w * 0.25, 0, Math.PI * 2);
+  ctx.arc(d.x + d.w * 0.3, d.y - d.w * 0.1, d.w * 0.3, 0, Math.PI * 2);
+  ctx.arc(d.x + d.w * 0.6, d.y, d.w * 0.22, 0, Math.PI * 2);
+  ctx.arc(d.x + d.w * 0.3, d.y + d.w * 0.05, d.w * 0.2, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawFlower(d) {
+  const s = d.size;
+  // sway animation
+  const sway = Math.sin(frame * 0.02 + d.sway) * 0.3;
+  ctx.save();
+  ctx.translate(d.x, d.y);
+
+  // 茎
+  ctx.strokeStyle = '#4CAF50';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.quadraticCurveTo(sway * 3, -s * 2, 0, -s * 4);
+  ctx.stroke();
+
+  // 花瓣
+  const petalCount = 5;
+  for (let i = 0; i < petalCount; i++) {
+    const angle = (i / petalCount) * Math.PI * 2 + sway * 0.2;
+    ctx.fillStyle = d.color;
+    ctx.beginPath();
+    ctx.ellipse(
+      Math.cos(angle) * s * 0.7,
+      -s * 4 + Math.sin(angle) * s * 0.7,
+      s * 0.5, s * 0.7,
+      angle, 0, Math.PI * 2
+    );
+    ctx.fill();
+  }
+  // 花芯
+  ctx.fillStyle = '#FFE082';
+  ctx.beginPath();
+  ctx.arc(0, -s * 4, s * 0.35, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawButterfly(d) {
+  d.angle += d.speed * 0.01;
+  d.x += Math.cos(d.angle) * d.speed;
+  d.y += Math.sin(d.angle * 0.7) * d.speed * 0.3;
+  // bounce off walls
+  if (d.x < 0 || d.x > W) d.angle += Math.PI;
+  if (d.y < 50 || d.y > H * 0.6) d.speed *= -1;
+
+  d.wingPhase += 0.08;
+
+  ctx.save();
+  ctx.translate(d.x, d.y);
+
+  const wingFlap = Math.abs(Math.sin(d.wingPhase)) * 0.8 + 0.2;
+
+  // 左翅
+  ctx.fillStyle = d.color;
+  ctx.globalAlpha = 0.7;
+  ctx.beginPath();
+  ctx.ellipse(-6, 0, 8 * wingFlap, 5, -0.3, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 右翅
+  ctx.beginPath();
+  ctx.ellipse(6, 0, 8 * wingFlap, 5, 0.3, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 身体
+  ctx.fillStyle = '#333';
+  ctx.globalAlpha = 1;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 1.5, 4, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawStar(d) {
+  const alpha = 0.3 + Math.sin(frame * d.twinkleSpeed + d.twinkle) * 0.3 + 0.4;
+  ctx.fillStyle = `rgba(255,255,200,${alpha})`;
+  const s = d.size;
+  ctx.beginPath();
+  for (let i = 0; i < 5; i++) {
+    const angle = (i * 4 * Math.PI) / 5 - Math.PI / 2;
+    const r = i === 0 ? s : s;
+    if (i === 0) ctx.moveTo(d.x + Math.cos(angle) * s, d.y + Math.sin(angle) * s);
+    else ctx.lineTo(d.x + Math.cos(angle) * s, d.y + Math.sin(angle) * s);
+    // 内点
+    const angle2 = ((i * 4 + 2) * Math.PI) / 5 - Math.PI / 2;
+    ctx.lineTo(d.x + Math.cos(angle2) * s * 0.4, d.y + Math.sin(angle2) * s * 0.4);
+  }
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawMoon(d) {
+  ctx.fillStyle = '#FFFDE7';
+  ctx.beginPath();
+  ctx.arc(d.x, d.y, 22, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#FFF9C4';
+  ctx.beginPath();
+  ctx.arc(d.x + 5, d.y - 3, 18, 0, Math.PI * 2);
+  ctx.fill();
+  // 发光
+  ctx.fillStyle = 'rgba(255,255,200,0.1)';
+  ctx.beginPath();
+  ctx.arc(d.x, d.y, 40, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(d.x, d.y, 60, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function lerpColor(a, b, t) {
+  const ca = hexToRgb(a);
+  const cb = hexToRgb(b);
+  if (!ca || !cb) return a;
+  const r = Math.round(ca.r + (cb.r - ca.r) * t);
+  const g = Math.round(ca.g + (cb.g - ca.g) * t);
+  const b2 = Math.round(ca.b + (cb.b - ca.b) * t);
+  return `rgb(${r},${g},${b2})`;
+}
+
+function hexToRgb(hex) {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  return result ? {
+    r: parseInt(result[1], 16),
+    g: parseInt(result[2], 16),
+    b: parseInt(result[3], 16)
+  } : null;
+}
+
+// ========== 游戏状态 ==========
+let gameRunning = false;
+let score = 0;
+let frame = 0;
+let items = [];
+let gameTime = 0;
+let particles = [];
+let screenShake = 0;
+let redFlash = 0;
+let stinkOverlay = 0;
+
+const mouth = { x: W / 2, y: H - 60, w: 80, h: 50 };
+let mouseX = W / 2;
+
+canvas.addEventListener('mousemove', e => {
+  const rect = canvas.getBoundingClientRect();
+  mouseX = e.clientX - rect.left;
+});
+
+const ITEMS = { ICE_CREAM: 'icecream', POOP: 'poop' };
+const ITEM_SIZE = 32;
+
+// ========== 雪糕多款式 ==========
+const iceCreamStyles = [
+  // 0: 经典蛋筒
+  function(ctx, x, y, s) {
+    ctx.fillStyle = '#D4A052';
+    ctx.beginPath();
+    ctx.moveTo(x - s, y + s * 0.2);
+    ctx.lineTo(x, y + s * 2.2);
+    ctx.lineTo(x + s, y + s * 0.2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = '#B8860B';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x - s * 0.2, y + s * 0.7);
+    ctx.lineTo(x + s * 0.2, y + s * 1.8);
+    ctx.moveTo(x + s * 0.2, y + s * 0.7);
+    ctx.lineTo(x - s * 0.2, y + s * 1.8);
+    ctx.stroke();
+    const colors = ['#FF9AA2', '#FFB7B2', '#FFDAC1', '#B5EAD7', '#E2F0CB'];
+    const c = colors[Math.floor(Math.random() * colors.length)];
+    ctx.fillStyle = c;
+    ctx.beginPath();
+    ctx.arc(x, y - s * 0.3, s * 1.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(x - s * 0.4, y - s * 0.6, s * 0.25, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(x + s * 0.3, y - s * 0.5, s * 0.15, 0, Math.PI * 2);
+    ctx.fill();
+  },
+  // 1: 棒棒冰
+  function(ctx, x, y, s) {
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(x - s * 0.4, y + s * 1.5, s * 0.8, s * 0.4);
+    const colors = ['#FF4757', '#2ED573', '#1E90FF', '#FFA502', '#A855F7'];
+    const c = colors[Math.floor(Math.random() * colors.length)];
+    ctx.fillStyle = c;
+    ctx.beginPath();
+    ctx.roundRect(x - s * 1.2, y - s * 1.4, s * 2.4, s * 2.8, s * 0.3);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+    ctx.beginPath();
+    ctx.roundRect(x - s * 0.6, y - s * 1.0, s * 0.4, s * 1.2, s * 0.1);
+    ctx.fill();
+  },
+  // 2: 三色球杯
+  function(ctx, x, y, s) {
+    ctx.fillStyle = '#F5DEB3';
+    ctx.beginPath();
+    ctx.moveTo(x - s * 1.4, y + s * 0.8);
+    ctx.quadraticCurveTo(x, y + s * 2.5, x + s * 1.4, y + s * 0.8);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = '#D2B48C';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(x - s * 1.4, y + s * 0.8);
+    ctx.lineTo(x + s * 1.4, y + s * 0.8);
+    ctx.stroke();
+    const balls = [
+      [0, -s * 1.0, '#FF6B6B'],
+      [-s * 0.7, -s * 0.3, '#FFE66D'],
+      [s * 0.7, -s * 0.3, '#4ECDC4']
+    ];
+    for (const [bx, by, bc] of balls) {
+      ctx.fillStyle = bc;
+      ctx.beginPath();
+      ctx.arc(x + bx, y + by, s * 0.8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.3)';
+      ctx.beginPath();
+      ctx.arc(x + bx - s * 0.2, y + by - s * 0.3, s * 0.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  },
+  // 3: 雪糕三明治
+  function(ctx, x, y, s) {
+    ctx.fillStyle = '#D4A052';
+    ctx.beginPath();
+    ctx.roundRect(x - s * 1.4, y - s * 0.2, s * 2.8, s * 0.5, s * 0.2);
+    ctx.fill();
+    ctx.fillStyle = '#FFF8DC';
+    ctx.fillRect(x - s * 1.3, y + s * 0.2, s * 2.6, s * 1.2);
+    ctx.fillStyle = '#D4A052';
+    ctx.beginPath();
+    ctx.roundRect(x - s * 1.4, y + s * 1.2, s * 2.8, s * 0.5, s * 0.2);
+    ctx.fill();
+    ctx.fillStyle = '#B8860B';
+    for (let i = -1; i <= 1; i++) {
+      ctx.beginPath();
+      ctx.arc(x + i * s * 0.8, y, s * 0.12, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = '#333';
+    ctx.beginPath();
+    ctx.arc(x - s * 0.5, y + s * 0.6, s * 0.1, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(x + s * 0.5, y + s * 0.6, s * 0.1, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(x, y + s * 0.9, s * 0.3, 0, Math.PI);
+    ctx.stroke();
+  }
+];
+
+function drawIceCream(ctx, x, y, size, styleIdx) {
+  const s = size * 0.35;
+  iceCreamStyles[styleIdx](ctx, x, y, s);
+}
+
+function drawPoop(ctx, x, y, size) {
+  const s = size * 0.35;
+  ctx.fillStyle = '#5D4037';
+  ctx.beginPath();
+  ctx.ellipse(x, y + s * 0.5, s * 1.5, s, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(x - s * 0.8, y - s * 0.3, s * 0.8, s * 0.6, -0.3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(x + s * 0.7, y - s * 0.2, s * 0.7, s * 0.55, 0.3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(x, y - s * 0.5, s * 0.9, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.15)';
+  ctx.beginPath();
+  ctx.ellipse(x - s * 0.3, y - s * 0.7, s * 0.3, s * 0.2, -0.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#333';
+  ctx.beginPath();
+  ctx.ellipse(x + s * 1.2, y - s * 0.8, 3, 2, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(200,200,255,0.4)';
+  ctx.beginPath();
+  ctx.ellipse(x + s * 1.0, y - s * 0.8 - 3, 4, 2, -0.3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(x + s * 1.4, y - s * 0.8 - 3, 4, 2, 0.3, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawItem(item) {
+  ctx.save();
+  if (item.type === ITEMS.POOP) {
+    item.rot = (item.rot || 0) + 0.02;
+    ctx.translate(item.x, item.y);
+    ctx.rotate(Math.sin(item.rot) * 0.1);
+    ctx.translate(-item.x, -item.y);
+  }
+  if (item.type === ITEMS.ICE_CREAM) {
+    drawIceCream(ctx, item.x, item.y, ITEM_SIZE, item.style || 0);
+  } else {
+    drawPoop(ctx, item.x, item.y, ITEM_SIZE);
+  }
+  ctx.restore();
+}
+
+// ========== 特效系统 ==========
+function spawnParticles(x, y, color, count, spread, life, sizeRange) {
+  for (let i = 0; i < count; i++) {
+    particles.push({
+      x, y,
+      vx: (Math.random() - 0.5) * spread,
+      vy: -Math.random() * spread * 0.8 - 1,
+      life: life || 30,
+      maxLife: life || 30,
+      size: sizeRange ? sizeRange[0] + Math.random() * (sizeRange[1] - sizeRange[0]) : 4,
+      color: color
+    });
+  }
+}
+
+function spawnStinkLines(x, y) {
+  for (let i = 0; i < 5; i++) {
+    const angle = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 0.6;
+    const speed = 1 + Math.random() * 1.5;
+    particles.push({
+      x, y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: 40,
+      maxLife: 40,
+      size: 2,
+      color: '#7B5B3A',
+      type: 'stink'
+    });
+  }
+}
+
+function spawnHeartEffect(x, y) {
+  for (let i = 0; i < 6; i++) {
+    particles.push({
+      x, y: y - 10,
+      vx: (Math.random() - 0.5) * 4,
+      vy: -2 - Math.random() * 3,
+      life: 35,
+      maxLife: 35,
+      size: 14 + Math.random() * 6,
+      color: '#FF4757',
+      type: 'heart'
+    });
+  }
+}
+
+function spawnBloodEffect(x, y) {
+  for (let i = 0; i < 10; i++) {
+    particles.push({
+      x, y,
+      vx: (Math.random() - 0.5) * 5,
+      vy: -Math.random() * 3 - 1,
+      life: 20 + Math.random() * 10,
+      maxLife: 30,
+      size: 3 + Math.random() * 3,
+      color: ['#FF6B6B', '#FF4757', '#FF9AA2'][Math.floor(Math.random() * 3)],
+      type: 'blood'
+    });
+  }
+}
+
+function spawnLevelUpParticles() {
+  for (let i = 0; i < 20; i++) {
+    const x = Math.random() * W;
+    particles.push({
+      x, y: H + 10,
+      vx: (Math.random() - 0.5) * 2,
+      vy: -2 - Math.random() * 3,
+      life: 50 + Math.random() * 20,
+      maxLife: 70,
+      size: 6 + Math.random() * 4,
+      color: ['#FFD700', '#FF6B6B', '#4ECDC4', '#FFE66D', '#DDA0DD'][Math.floor(Math.random() * 5)],
+      type: 'levelUp'
+    });
+  }
+}
+
+// ========== 生成物品 ==========
+function spawnItem() {
+  const poopRatio = Math.min(0.4, 0.2 + gameTime * 0.002);
+  const type = Math.random() < poopRatio ? ITEMS.POOP : ITEMS.ICE_CREAM;
+  const style = type === ITEMS.ICE_CREAM ? Math.floor(Math.random() * iceCreamStyles.length) : 0;
+  items.push({
+    type, style,
+    x: ITEM_SIZE + Math.random() * (W - ITEM_SIZE * 2),
+    y: -ITEM_SIZE,
+    speed: 2 + gameTime * 0.05 + Math.random() * 1.5,
+    rot: 0
+  });
+}
+
+function getSpawnInterval() {
+  return Math.max(15, 60 - gameTime * 0.5);
+}
+
+// ========== 绘制大嘴 ==========
+function drawMouth() {
+  const x = mouth.x, y = mouth.y;
+  ctx.fillStyle = '#FF6B6B';
+  ctx.beginPath();
+  ctx.ellipse(x, y, mouth.w/2, mouth.h/2, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#CC4444';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+
+  ctx.fillStyle = '#FF8E8E';
+  ctx.beginPath();
+  ctx.ellipse(x, y - 5, mouth.w/2 - 5, mouth.h/4, 0, Math.PI, 0);
+  ctx.fill();
+  ctx.strokeStyle = '#CC4444';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  ctx.fillStyle = '#E55555';
+  ctx.beginPath();
+  ctx.ellipse(x, y + 8, mouth.w/2 - 5, mouth.h/5, 0, 0, Math.PI);
+  ctx.fill();
+  ctx.strokeStyle = '#CC4444';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  ctx.fillStyle = '#fff';
+  for (let i = -2; i <= 2; i++) {
+    const tx = x + i * 10;
+    ctx.fillRect(tx - 3, y - 6, 6, 8);
+    ctx.strokeStyle = '#ddd';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(tx - 3, y - 6, 6, 8);
+  }
+
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.ellipse(x - 18, y - 28, 10, 12, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(x + 18, y - 28, 10, 12, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#333';
+  ctx.beginPath();
+  ctx.arc(x - 18, y - 26, 5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(x + 18, y - 26, 5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(x - 16, y - 29, 2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(x + 20, y - 29, 2, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 腮红
+  ctx.fillStyle = 'rgba(255,150,150,0.3)';
+  ctx.beginPath();
+  ctx.ellipse(x - 28, y - 15, 8, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(x + 28, y - 15, 8, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function checkCollision(item, mx, my) {
+  const dx = item.x - mx;
+  const dy = item.y - my;
+  return Math.sqrt(dx * dx + dy * dy) < (ITEM_SIZE * 0.6 + mouth.w * 0.32);
+}
+
+// ========== 更新 ==========
+function update() {
+  if (!gameRunning) return;
+
+  frame++;
+  gameTime = frame / 60;
+
+  // 等级切换背景
+  const newLevel = Math.min(levels.length - 1, Math.floor(gameTime / 15));
+  if (newLevel !== currentLevel) {
+    prevBgColors = levels[currentLevel].sky;
+    currentLevel = newLevel;
+    nextBgColors = levels[currentLevel].sky;
+    levelTransition = 0;
+    levelUpFlash = 20;
+    playLevelUpSFX();
+    spawnLevelUpParticles();
+    initBgDecorations(currentLevel);
+  }
+
+  if (levelTransition < 1) {
+    levelTransition = Math.min(1, levelTransition + 0.02);
+  }
+  if (levelUpFlash > 0) levelUpFlash--;
+
+  // 更新云
+  for (const d of bgDecorations) {
+    if (d.type === 'cloud') {
+      d.x += d.speed;
+      if (d.x > W + d.w) d.x = -d.w;
+    }
+  }
+
+  mouth.x += (mouseX - mouth.x) * 0.2;
+  mouth.x = Math.max(mouth.w/2, Math.min(W - mouth.w/2, mouth.x));
+
+  if (frame % Math.round(getSpawnInterval()) === 0) {
+    const extraSpawns = Math.floor(gameTime / 30);
+    spawnItem();
+    for (let i = 0; i < extraSpawns; i++) {
+      if (Math.random() < 0.3) spawnItem();
+    }
+  }
+
+  for (let i = items.length - 1; i >= 0; i--) {
+    const item = items[i];
+    item.y += item.speed;
+
+    if (checkCollision(item, mouth.x, mouth.y)) {
+      if (item.type === ITEMS.POOP) {
+        playPoofSFX();
+        screenShake = 15;
+        stinkOverlay = 30;
+        spawnStinkLines(item.x, item.y);
+        spawnParticles(item.x, item.y, '#5D4037', 20, 8, 30, [3, 6]);
+        gameRunning = false;
+        showGameOver();
+        return;
+      } else {
+        score++;
+        playEatSFX();
+        spawnHeartEffect(item.x, item.y);
+        spawnParticles(item.x, item.y, ['#FFD700', '#FF6B6B', '#4ECDC4'][Math.floor(Math.random()*3)], 8, 5, 20, [2, 5]);
+        items.splice(i, 1);
+        continue;
+      }
+    }
+
+    if (item.y > H + ITEM_SIZE) {
+      if (item.type === ITEMS.ICE_CREAM) {
+        score--;
+        playMissSFX();
+        redFlash = 12;
+        spawnBloodEffect(mouth.x, mouth.y - 20);
+        screenShake = 6;
+        if (score <= 0) {
+          score = 0;
+          gameRunning = false;
+          showGameOver();
+          return;
+        }
+      }
+      items.splice(i, 1);
+    }
+  }
+
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx || 0;
+    p.y += p.vy || 0;
+    p.vy = (p.vy || 0) + 0.1;
+    p.life--;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+
+  if (screenShake > 0) screenShake *= 0.85;
+  if (screenShake < 0.5) screenShake = 0;
+  if (redFlash > 0) redFlash--;
+  if (stinkOverlay > 0) stinkOverlay--;
+}
+
+// ========== 渲染 ==========
+function draw() {
+  ctx.save();
+
+  if (screenShake > 0.5) {
+    ctx.translate((Math.random()-0.5)*screenShake*0.8, (Math.random()-0.5)*screenShake*0.8);
+  }
+
+  ctx.clearRect(-10, -10, W + 20, H + 20);
+
+  // 背景
+  drawBackground();
+
+  // 升级闪光过渡
+  if (levelUpFlash > 0) {
+    ctx.fillStyle = `rgba(255,255,255,${levelUpFlash / 20 * 0.2})`;
+    ctx.fillRect(-10, -10, W + 20, H + 20);
+  }
+
+  // 物品
+  for (const item of items) drawItem(item);
+
+  // 粒子
+  for (const p of particles) {
+    const alpha = p.life / p.maxLife;
+    ctx.globalAlpha = alpha;
+    if (p.type === 'heart') {
+      ctx.font = `${p.size}px Arial`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('❤️', p.x, p.y);
+    } else if (p.type === 'stink') {
+      ctx.font = `${p.size * 3}px Arial`;
+      ctx.fillText('💨', p.x, p.y);
+    } else if (p.type === 'blood') {
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size * alpha, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (p.type === 'levelUp') {
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size * alpha, 0, Math.PI * 2);
+      ctx.fill();
+      // sparkle
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(p.x - p.size * 0.3, p.y - p.size * 0.3, p.size * 0.3 * alpha, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size * alpha, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.globalAlpha = 1;
+
+  // 大嘴
+  drawMouth();
+
+  if (redFlash > 0) {
+    ctx.fillStyle = `rgba(255,0,0,${redFlash/12*0.25})`;
+    ctx.fillRect(-10, -10, W + 20, H + 20);
+  }
+
+  if (stinkOverlay > 0) {
+    ctx.fillStyle = `rgba(93,64,55,${stinkOverlay/30*0.12})`;
+    ctx.fillRect(-10, -10, W + 20, H + 20);
+    ctx.fillStyle = `rgba(93,64,55,${stinkOverlay/30*0.25})`;
+    ctx.font = '20px Arial';
+    ctx.textAlign = 'center';
+    for (let i = 0; i < 6; i++) {
+      ctx.fillText('💨', 60 + i * 80, 100 + (i % 2) * 60);
+    }
+  }
+
+  // UI
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.beginPath();
+  ctx.roundRect(W - 130, 10, 120, 40, 12);
+  ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 22px Arial';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('🍦 ' + score, W - 70, 30);
+
+  const level = Math.floor(gameTime / 15) + 1;
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.beginPath();
+  ctx.roundRect(10, 10, 120, 40, 12);
+  ctx.fill();
+  ctx.fillStyle = '#FFD700';
+  ctx.font = 'bold 14px Arial';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const lvName = levels[currentLevel].name;
+  ctx.fillText(`🎀 ${lvName}`, 70, 30);
+
+  ctx.restore();
+}
+
+// roundRect polyfill
+if (!CanvasRenderingContext2D.prototype.roundRect) {
+  CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
+    this.moveTo(x + r, y);
+    this.lineTo(x + w - r, y);
+    this.quadraticCurveTo(x + w, y, x + w, y + r);
+    this.lineTo(x + w, y + h - r);
+    this.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    this.lineTo(x + r, y + h);
+    this.quadraticCurveTo(x, y + h, x, y + h - r);
+    this.lineTo(x, y + r);
+    this.quadraticCurveTo(x, y, x + r, y);
+    return this;
+  };
+}
+
+function gameLoop() {
+  update();
+  draw();
+  requestAnimationFrame(gameLoop);
+}
+
+function startGame() {
+  document.getElementById('startScreen').style.display = 'none';
+  resetGame();
+  initBgDecorations(0);
+  startBGM();
+  gameRunning = true;
+}
+
+function restartGame() {
+  document.getElementById('gameOverScreen').style.display = 'none';
+  resetGame();
+  particles = [];
+  screenShake = 0;
+  redFlash = 0;
+  stinkOverlay = 0;
+  currentLevel = 0;
+  levelTransition = 0;
+  prevBgColors = levels[0].sky;
+  nextBgColors = levels[0].sky;
+  levelUpFlash = 0;
+  initBgDecorations(0);
+  startBGM();
+  gameRunning = true;
+}
+
+function resetGame() {
+  score = 0;
+  frame = 0;
+  gameTime = 0;
+  items = [];
+  mouth.x = W / 2;
+}
+
+function showGameOver() {
+  stopBGM();
+  document.getElementById('finalScore').textContent = '得分: ' + score;
+  document.getElementById('gameOverScreen').style.display = 'flex';
+}
+
+gameLoop();
+</script>
+</body>
+</html>

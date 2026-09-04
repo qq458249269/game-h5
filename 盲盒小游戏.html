@@ -1,0 +1,1586 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>洛克盲盒</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; user-select: none; }
+body {
+  background: #1a1a2e;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  font-family: 'Segoe UI', Arial, sans-serif;
+  overflow: hidden;
+}
+#app {
+  position: relative;
+  width: 480px;
+  min-height: 700px;
+  background: linear-gradient(180deg, #16213e, #0f3460);
+  border-radius: 16px;
+  box-shadow: 0 0 40px rgba(0,0,0,0.5);
+  overflow: hidden;
+}
+
+/* ===== 顶部状态栏 ===== */
+.top-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 16px;
+  background: rgba(0,0,0,0.25);
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+.coin-display {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #FFD700;
+  font-size: 16px;
+  font-weight: bold;
+  text-shadow: 0 0 8px rgba(255,215,0,0.4);
+}
+.draw-count {
+  color: rgba(255,255,255,0.6);
+  font-size: 13px;
+}
+
+/* ===== Canvas 展示区 ===== */
+#displayCanvas {
+  display: block;
+  width: 480px;
+  height: 340px;
+  background: rgba(0,0,0,0.15);
+}
+
+/* ===== 操作区 ===== */
+.action-area {
+  padding: 14px 16px 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.action-area .btn-row {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+.btn {
+  flex: 1;
+  padding: 12px 0;
+  border: none;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+  text-align: center;
+}
+.btn:active { transform: scale(0.96); }
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none !important;
+}
+.btn-draw { background: linear-gradient(135deg, #e94560, #c23152); color: #fff; box-shadow: 0 4px 16px rgba(233,69,96,0.35); }
+.btn-draw10 { background: linear-gradient(135deg, #e94560, #c23152); color: #fff; box-shadow: 0 4px 16px rgba(233,69,96,0.35); }
+.btn-collection { background: linear-gradient(135deg, #533483, #3b1f6e); color: #fff; box-shadow: 0 4px 16px rgba(83,52,131,0.35); }
+.btn-shop { background: linear-gradient(135deg, #f39c12, #d68910); color: #fff; box-shadow: 0 4px 16px rgba(243,156,18,0.35); }
+.btn-checkin { background: linear-gradient(135deg, #27ae60, #1e8449); color: #fff; box-shadow: 0 4px 16px rgba(39,174,96,0.35); }
+.btn-small { padding: 8px 20px; font-size: 13px; flex: 0; }
+
+/* ===== 保底进度 ===== */
+.pity-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 16px 14px;
+  gap: 10px;
+  font-size: 12px;
+}
+.pity-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.pity-label {
+  color: rgba(255,255,255,0.5);
+  font-size: 11px;
+}
+.pity-track {
+  height: 4px;
+  background: rgba(255,255,255,0.1);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.pity-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s;
+}
+.pity-fill.epic { background: linear-gradient(90deg, #9b59b6, #8e44ad); }
+.pity-fill.legendary { background: linear-gradient(90deg, #f39c12, #e67e22); }
+.pity-text { color: rgba(255,255,255,0.4); font-size: 10px; text-align: right; }
+.pity-text.epic { color: #bb86fc; }
+.pity-text.legendary { color: #ffd700; }
+
+/* ===== 弹窗 ===== */
+.modal-overlay {
+  display: none;
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  background: rgba(0,0,0,0.7);
+  z-index: 50;
+  justify-content: center;
+  align-items: center;
+  backdrop-filter: blur(4px);
+}
+.modal-overlay.show { display: flex; }
+.modal {
+  background: #1a1a3e;
+  border-radius: 16px;
+  padding: 20px;
+  width: 92%;
+  max-height: 85%;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+  border: 1px solid rgba(255,255,255,0.06);
+}
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+  flex-shrink: 0;
+}
+.modal-scroll {
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+.modal-header h2 {
+  color: #fff;
+  font-size: 18px;
+}
+.modal-close {
+  background: none;
+  border: none;
+  color: rgba(255,255,255,0.4);
+  font-size: 22px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+.modal-close:hover { background: rgba(255,255,255,0.1); color: #fff; }
+
+/* ===== 图鉴网格 ===== */
+.collection-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+.collection-card {
+  background: rgba(255,255,255,0.04);
+  border-radius: 10px;
+  padding: 10px 6px;
+  text-align: center;
+  border: 1px solid rgba(255,255,255,0.06);
+  transition: 0.2s;
+}
+.collection-card.owned { background: rgba(255,255,255,0.07); border-color: rgba(255,255,255,0.12); }
+.collection-card.locked { opacity: 0.35; }
+.collection-card .icon { font-size: 28px; display: block; margin-bottom: 4px; }
+.collection-card .name { font-size: 11px; color: rgba(255,255,255,0.7); }
+.collection-card .rarity-tag {
+  display: inline-block;
+  font-size: 9px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  margin-top: 3px;
+}
+
+/* ===== 稀有度颜色 ===== */
+.rarity-1 { color: #b0b0b0; }
+.rarity-2 { color: #64b5f6; }
+.rarity-3 { color: #bb86fc; }
+.rarity-4 { color: #ffd700; }
+.rarity-5 {
+  background: linear-gradient(90deg, #ff6b6b, #feca57, #48dbfb, #bb86fc, #ff6b6b);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.bg-rarity-1 { background: rgba(176,176,176,0.2); border-color: rgba(176,176,176,0.3); }
+.bg-rarity-2 { background: rgba(100,181,246,0.2); border-color: rgba(100,181,246,0.3); }
+.bg-rarity-3 { background: rgba(187,134,252,0.2); border-color: rgba(187,134,252,0.3); }
+.bg-rarity-4 { background: rgba(255,215,0,0.2); border-color: rgba(255,215,0,0.3); }
+.bg-rarity-5 {
+  background: linear-gradient(135deg, rgba(255,107,107,0.2), rgba(72,219,251,0.2));
+  border-color: rgba(255,215,0,0.3);
+}
+.tag-rarity-1 { background: rgba(176,176,176,0.25); color: #b0b0b0; }
+.tag-rarity-2 { background: rgba(100,181,246,0.25); color: #64b5f6; }
+.tag-rarity-3 { background: rgba(187,134,252,0.25); color: #bb86fc; }
+.tag-rarity-4 { background: rgba(255,215,0,0.25); color: #ffd700; }
+.tag-rarity-5 { background: linear-gradient(135deg, rgba(255,107,107,0.3), rgba(72,219,251,0.3)); color: #fff; }
+
+/* ===== 商店/签到弹窗 ===== */
+.shop-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+.shop-item:last-child { border: none; }
+.shop-item-info { display: flex; align-items: center; gap: 10px; }
+.shop-item-icon { font-size: 24px; }
+.shop-item-name { color: #fff; font-size: 14px; }
+.shop-item-cost { color: #FFD700; font-size: 13px; }
+.checkin-status {
+  text-align: center;
+  padding: 10px 0;
+  color: rgba(255,255,255,0.6);
+  font-size: 14px;
+}
+.collection-progress {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 0 14px;
+  color: rgba(255,255,255,0.4);
+  font-size: 12px;
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- 顶部状态栏 -->
+  <div class="top-bar">
+    <div class="coin-display">🪙 <span id="coinCount">0</span></div>
+    <div class="draw-count">已抽 <span id="totalDraws">0</span> 次</div>
+  </div>
+
+  <!-- Canvas 展示区 -->
+  <canvas id="displayCanvas" width="480" height="340"></canvas>
+
+  <!-- 操作区 -->
+  <div class="action-area">
+    <div class="btn-row">
+      <button class="btn btn-draw" id="btnDraw" onclick="doDraw(1)">🔮 单抽 100</button>
+      <button class="btn btn-draw10" id="btnDraw10" onclick="doDraw(10)">🔮 十连 900</button>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-collection" onclick="showCollection()">📖 图鉴</button>
+      <button class="btn btn-shop" onclick="showShop()">🏪 商店</button>
+      <button class="btn btn-checkin" onclick="doCheckin()">📅 签到</button>
+      <button class="btn btn-checkin" id="btnDebug" onclick="addCoinDebug()">🪙 白嫖</button>
+    </div>
+    <div class="btn-row" style="justify-content:center;gap:4px">
+      <span style="color:rgba(255,255,255,0.4);font-size:12px;line-height:36px">倍速</span>
+      <button class="btn btn-small" id="speed1" style="flex:0;padding:6px 14px;background:#e94560;color:#fff;border:none;border-radius:6px;font-weight:bold;cursor:pointer" onclick="setSpeed(1)">1×</button>
+      <button class="btn btn-small" id="speed2" style="flex:0;padding:6px 14px;background:rgba(255,255,255,0.1);color:rgba(255,255,255,0.5);border:none;border-radius:6px;cursor:pointer" onclick="setSpeed(2)">2×</button>
+      <button class="btn btn-small" id="speed3" style="flex:0;padding:6px 14px;background:rgba(255,255,255,0.1);color:rgba(255,255,255,0.5);border:none;border-radius:6px;cursor:pointer" onclick="setSpeed(3)">3×</button>
+  </div>
+
+  <!-- 保底进度 -->
+  <div class="pity-bar">
+    <div class="pity-item">
+      <div class="pity-label">🟣 史诗保底</div>
+      <div class="pity-track"><div class="pity-fill epic" id="pityEpicFill" style="width:0%"></div></div>
+      <div class="pity-text epic" id="pityEpicText">0/10</div>
+    </div>
+    <div class="pity-item">
+      <div class="pity-label">🟡 传说保底</div>
+      <div class="pity-track"><div class="pity-fill legendary" id="pityLegendaryFill" style="width:0%"></div></div>
+      <div class="pity-text legendary" id="pityLegendaryText">0/50</div>
+    </div>
+  </div>
+
+  <!-- 图鉴弹窗 -->
+  <div class="modal-overlay" id="collectionModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>📖 宠物图鉴</h2>
+        <button class="modal-close" onclick="closeModal('collectionModal')">✕</button>
+      </div>
+      <div class="modal-scroll">
+        <div class="collection-progress"><span id="collectionProgress">0/30</span></div>
+        <div class="collection-grid" id="collectionGrid"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 商店弹窗 -->
+  <div class="modal-overlay" id="shopModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>🏪 商店</h2>
+        <button class="modal-close" onclick="closeModal('shopModal')">✕</button>
+      </div>
+      <div class="modal-scroll" id="shopContent"></div>
+    </div>
+  </div>
+
+  <!-- 签到弹窗 -->
+  <div class="modal-overlay" id="checkinModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>📅 每日签到</h2>
+        <button class="modal-close" onclick="closeModal('checkinModal')">✕</button>
+      </div>
+      <div class="modal-scroll" id="checkinContent"></div>
+    </div>
+  </div>
+
+  <!-- 结果弹窗 -->
+  <div class="modal-overlay" id="resultModal">
+    <div class="modal" style="text-align:center">
+      <div class="modal-header" style="justify-content:center"><h2 id="resultTitle">🎉 抽到了！</h2></div>
+      <div id="resultContent" style="padding:10px 0"></div>
+      <button class="btn btn-draw" onclick="closeModal('resultModal')" style="margin-top:10px">确定</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ========================================================================
+// 1. 数据层 — 奖池 & 稀有度配置
+// ========================================================================
+const RARITY = {
+  1: { name: '普通',  prob: 0.50, color: '#b0b0b0', tagClass: 'tag-rarity-1', bgClass: 'bg-rarity-1', emoji: '⭐' },
+  2: { name: '稀有',  prob: 0.30, color: '#64b5f6', tagClass: 'tag-rarity-2', bgClass: 'bg-rarity-2', emoji: '⭐⭐' },
+  3: { name: '史诗',  prob: 0.15, color: '#bb86fc', tagClass: 'tag-rarity-3', bgClass: 'bg-rarity-3', emoji: '⭐⭐⭐' },
+  4: { name: '传说',  prob: 0.04, color: '#ffd700', tagClass: 'tag-rarity-4', bgClass: 'bg-rarity-4', emoji: '⭐⭐⭐⭐' },
+  5: { name: '限定',  prob: 0.01, color: 'rainbow',  tagClass: 'tag-rarity-5', bgClass: 'bg-rarity-5', emoji: '🌟' }
+};
+
+// 5 个系列 × 6 个宠物 = 30 个
+const SERIES = {
+  fire:   { name: '火系',  icon: '🔥' },
+  water:  { name: '水系',  icon: '💧' },
+  grass:  { name: '草系',  icon: '🌿' },
+  light:  { name: '光系',  icon: '✨' },
+  dark:   { name: '暗系',  icon: '🌑' }
+};
+
+const POOL = [
+  // 火系
+  { id: 'fire_1',  series: 'fire',  name: '小火苗',  icon: '🔥', rarity: 1 },
+  { id: 'fire_2',  series: 'fire',  name: '火花兽',  icon: '🦊', rarity: 2 },
+  { id: 'fire_3',  series: 'fire',  name: '烈焰虎',  icon: '🐯', rarity: 3 },
+  { id: 'fire_4',  series: 'fire',  name: '熔岩龙',  icon: '🐉', rarity: 4 },
+  { id: 'fire_5',  series: 'fire',  name: '凤凰',    icon: '🦅', rarity: 4 },
+  { id: 'fire_6',  series: 'fire',  name: '炎帝',    icon: '👑', rarity: 5 },
+  // 水系
+  { id: 'water_1', series: 'water', name: '水球球',  icon: '💧', rarity: 1 },
+  { id: 'water_2', series: 'water', name: '冰晶贝',  icon: '🐚', rarity: 2 },
+  { id: 'water_3', series: 'water', name: '寒冰蛇',  icon: '🐍', rarity: 3 },
+  { id: 'water_4', series: 'water', name: '冰龙',    icon: '🐲', rarity: 4 },
+  { id: 'water_5', series: 'water', name: '海神',    icon: '🌊', rarity: 4 },
+  { id: 'water_6', series: 'water', name: '利维坦',  icon: '🐙', rarity: 5 },
+  // 草系
+  { id: 'grass_1', series: 'grass', name: '种子娃',  icon: '🌱', rarity: 1 },
+  { id: 'grass_2', series: 'grass', name: '花仙子',  icon: '🌸', rarity: 2 },
+  { id: 'grass_3', series: 'grass', name: '荆棘藤',  icon: '🌵', rarity: 3 },
+  { id: 'grass_4', series: 'grass', name: '树精',    icon: '🌳', rarity: 4 },
+  { id: 'grass_5', series: 'grass', name: '生命鹿',  icon: '🦌', rarity: 4 },
+  { id: 'grass_6', series: 'grass', name: '自然神',  icon: '🌍', rarity: 5 },
+  // 光系
+  { id: 'light_1', series: 'light', name: '小光团',  icon: '💫', rarity: 1 },
+  { id: 'light_2', series: 'light', name: '天使羽',  icon: '🪶', rarity: 2 },
+  { id: 'light_3', series: 'light', name: '圣光马',  icon: '🦄', rarity: 3 },
+  { id: 'light_4', series: 'light', name: '天使',    icon: '👼', rarity: 4 },
+  { id: 'light_5', series: 'light', name: '太阳神',  icon: '☀️', rarity: 4 },
+  { id: 'light_6', series: 'light', name: '创世光',  icon: '🌟', rarity: 5 },
+  // 暗系
+  { id: 'dark_1',  series: 'dark',  name: '小暗影',  icon: '👻', rarity: 1 },
+  { id: 'dark_2',  series: 'dark',  name: '夜行蝠',  icon: '🦇', rarity: 2 },
+  { id: 'dark_3',  series: 'dark',  name: '恶魔',    icon: '😈', rarity: 3 },
+  { id: 'dark_4',  series: 'dark',  name: '暗龙',    icon: '🐲', rarity: 4 },
+  { id: 'dark_5',  series: 'dark',  name: '死神',    icon: '💀', rarity: 4 },
+  { id: 'dark_6',  series: 'dark',  name: '混沌',    icon: '🌌', rarity: 5 }
+];
+
+const POOL_MAP = Object.fromEntries(POOL.map(p => [p.id, p]));
+
+// ========================================================================
+// 2. 存储层 — localStorage
+// ========================================================================
+const SAVE_KEY = 'blindbox_save';
+
+function defaultSave() {
+  return {
+    coins: 500,          // 初始 500 金币
+    totalDraws: 0,
+    collection: {},      // { id: count }
+    pityEpic: 0,         // 距上次史诗+已抽次数
+    pityLegendary: 0,    // 距上次传说+已抽次数
+    lastCheckin: '',     // YYYY-MM-DD
+    checkinStreak: 0
+  };
+}
+
+let save;
+
+function loadSave() {
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      save = { ...defaultSave(), ...parsed };
+    } else {
+      save = defaultSave();
+    }
+  } catch { save = defaultSave(); }
+  persist();
+}
+
+function persist() {
+  localStorage.setItem(SAVE_KEY, JSON.stringify(save));
+}
+
+// ========================================================================
+// 3. 音效系统
+// ========================================================================
+let audioCtx = null;
+function initAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+}
+
+function playNote(freq, duration, type, gainVal, when) {
+  if (!audioCtx) return;
+  try {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = type || 'sine';
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(gainVal, when);
+    gain.gain.exponentialRampToValueAtTime(0.001, when + duration);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start(when);
+    osc.stop(when + duration);
+  } catch {}
+}
+
+function playDrawSFX() {
+  initAudio();
+  const now = audioCtx.currentTime;
+  playNote(440, 0.08, 'sine', 0.15, now);
+  playNote(554, 0.08, 'sine', 0.15, now + 0.08);
+  playNote(659, 0.08, 'sine', 0.15, now + 0.16);
+}
+
+function playRevealSFX(rarity) {
+  initAudio();
+  const now = audioCtx.currentTime;
+  if (rarity >= 5) {
+    // 限定 - 宏大音效
+    for (let i = 0; i < 8; i++) {
+      playNote(523 + i * 60, 0.12, 'sine', 0.2, now + i * 0.1);
+    }
+    playNote(1047, 0.4, 'sine', 0.3, now + 0.8);
+    playNote(1319, 0.5, 'sine', 0.25, now + 1.0);
+  } else if (rarity >= 4) {
+    playNote(659, 0.1, 'sine', 0.2, now);
+    playNote(784, 0.1, 'sine', 0.2, now + 0.1);
+    playNote(1047, 0.3, 'sine', 0.25, now + 0.2);
+    playNote(1319, 0.3, 'sine', 0.2, now + 0.3);
+  } else if (rarity >= 3) {
+    playNote(523, 0.1, 'sine', 0.15, now);
+    playNote(659, 0.1, 'sine', 0.15, now + 0.1);
+    playNote(784, 0.2, 'sine', 0.2, now + 0.2);
+  } else {
+    playNote(440, 0.1, 'sine', 0.1, now);
+    playNote(554, 0.15, 'sine', 0.1, now + 0.1);
+  }
+}
+
+function playCheckinSFX() {
+  initAudio();
+  const now = audioCtx.currentTime;
+  playNote(523, 0.1, 'sine', 0.15, now);
+  playNote(659, 0.1, 'sine', 0.15, now + 0.1);
+  playNote(784, 0.15, 'sine', 0.2, now + 0.2);
+}
+
+function playBuySFX() {
+  initAudio();
+  const now = audioCtx.currentTime;
+  playNote(880, 0.08, 'sine', 0.12, now);
+  playNote(1108, 0.15, 'sine', 0.12, now + 0.1);
+}
+
+// ========================================================================
+// 4. Canvas 渲染 & 开盒动画
+// ========================================================================
+const canvas = document.getElementById('displayCanvas');
+const ctx = canvas.getContext('2d');
+const CW = 480, CH = 340;
+
+let animState = 'idle'; // idle | shaking | glowing | bursting | revealing | zoom | zoomWaiting | done
+let animFrame = 0;
+let animSpeed = 1;
+let animBusy = false;
+
+function setSpeed(s) {
+  animSpeed = s;
+  document.getElementById('speed1').style.background = s === 1 ? '#e94560' : 'rgba(255,255,255,0.1)';
+  document.getElementById('speed1').style.color = s === 1 ? '#fff' : 'rgba(255,255,255,0.5)';
+  document.getElementById('speed2').style.background = s === 2 ? '#e94560' : 'rgba(255,255,255,0.1)';
+  document.getElementById('speed2').style.color = s === 2 ? '#fff' : 'rgba(255,255,255,0.5)';
+  document.getElementById('speed3').style.background = s === 3 ? '#e94560' : 'rgba(255,255,255,0.1)';
+  document.getElementById('speed3').style.color = s === 3 ? '#fff' : 'rgba(255,255,255,0.5)';
+}
+let animItems = [];     // 抽奖结果 items
+let animIndex = 0;      // 当前展示第几个（十连）
+let showItem = null;    // 当前展示的物品
+let particles = [];
+let lingerParticles = []; // 出金常驻粒子
+
+// 粒子系统
+function spawnParticles(x, y, count, config) {
+  const { color, spread, speed, life, size } = { spread: 6, speed: 4, life: 40, size: [3, 6], ...config };
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const spd = 1 + Math.random() * speed;
+    particles.push({
+      x, y,
+      vx: Math.cos(angle) * spd + (Math.random() - 0.5) * spread * 0.5,
+      vy: Math.sin(angle) * spd - 1,
+      life: life + Math.random() * 10,
+      maxLife: life + 10,
+      size: size[0] + Math.random() * (size[1] - size[0]),
+      color: Array.isArray(color) ? color[Math.floor(Math.random() * color.length)] : color
+    });
+  }
+}
+
+function spawnGoldRays(x, y) {
+  for (let i = 0; i < 50; i++) {
+    const angle = (i / 50) * Math.PI * 2;
+    const spd = 1 + Math.random() * 4;
+    particles.push({
+      x, y,
+      vx: Math.cos(angle) * spd,
+      vy: Math.sin(angle) * spd,
+      life: 40 + Math.random() * 20,
+      maxLife: 60,
+      size: 2 + Math.random() * 5,
+      color: ['#ffd700', '#ffec8b', '#fff', '#ffa500'][Math.floor(Math.random() * 4)],
+      type: 'gold'
+    });
+  }
+}
+
+function spawnRainbow(x, y) {
+  const colors = ['#ff6b6b', '#ffa502', '#ffd700', '#48dbfb', '#bb86fc', '#ff6b6b'];
+  for (let i = 0; i < 60; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const spd = 1 + Math.random() * 4;
+    particles.push({
+      x, y,
+      vx: Math.cos(angle) * spd,
+      vy: Math.sin(angle) * spd - 0.5,
+      life: 50 + Math.random() * 20,
+      maxLife: 70,
+      size: 4 + Math.random() * 6,
+      color: colors[Math.floor(Math.random() * colors.length)],
+      type: 'rainbow'
+    });
+  }
+}
+
+function drawBox(x, y, size, { shake, glow } = {}) {
+  const s = size || 70;
+  let ox = 0, oy = 0;
+  if (shake) {
+    ox = (Math.random() - 0.5) * shake;
+    oy = (Math.random() - 0.5) * shake;
+  }
+
+  ctx.save();
+  ctx.translate(x + ox, y + oy);
+
+  // 发光
+  if (glow) {
+    const grad = ctx.createRadialGradient(0, 0, 10, 0, 0, s * 1.5);
+    grad.addColorStop(0, `rgba(255,215,0,${glow * 0.4})`);
+    grad.addColorStop(0.5, `rgba(255,215,0,${glow * 0.15})`);
+    grad.addColorStop(1, 'rgba(255,215,0,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(0, 0, s * 1.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // 盒子主体
+  const hw = s * 0.7, hh = s * 0.5;
+  ctx.fillStyle = '#e94560';
+  ctx.shadowColor = 'rgba(233,69,96,0.3)';
+  ctx.shadowBlur = 10;
+  ctx.beginPath();
+  ctx.roundRect(-hw, -hh, hw * 2, hh * 2, 8);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // 盒盖
+  ctx.fillStyle = '#c23152';
+  ctx.beginPath();
+  ctx.roundRect(-hw - 4, -hh - 10, hw * 2 + 8, 16, 6);
+  ctx.fill();
+
+  // 丝带
+  ctx.fillStyle = '#ffd700';
+  ctx.fillRect(-4, -hh, 8, hh * 2);
+  ctx.fillRect(-hw, -4, hw * 2, 8);
+
+  // 问号
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 40px Arial';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('?', 0, 4);
+
+  ctx.restore();
+}
+
+function getRarityColor(rarityNum) {
+  if (rarityNum >= 5) return { main: '#ffd700', glow: ['#ff6b6b', '#feca57', '#48dbfb', '#bb86fc'] };
+  const c = RARITY[rarityNum]?.color || '#b0b0b0';
+  return { main: c, glow: [c] };
+}
+
+function drawItemIcon(item, x, y, scale) {
+  if (!item) return;
+  const s = scale || 1;
+  const rarity = item.rarity;
+
+  // 稀有度外发光
+  if (rarity >= 4) {
+    ctx.shadowColor = rarity >= 5 ? '#ffd700' : '#ffa500';
+    ctx.shadowBlur = 30 * s;
+  } else if (rarity >= 3) {
+    ctx.shadowColor = '#bb86fc';
+    ctx.shadowBlur = 20 * s;
+  }
+
+  // 稀有度光环
+  if (rarity >= 4) {
+    const rc = getRarityColor(rarity);
+    const glowColors = rc.glow;
+    for (let i = 0; i < 16; i++) {
+      const a = (i / 16) * Math.PI * 2 + animFrame * 0.025;
+      const r = 52 * s + Math.sin(animFrame * 0.04 + i * 1.5) * 8;
+      ctx.fillStyle = glowColors[i % glowColors.length];
+      ctx.globalAlpha = 0.35 + Math.sin(animFrame * 0.06 + i * 0.8) * 0.2;
+      ctx.beginPath();
+      ctx.arc(x + Math.cos(a) * r, y + Math.sin(a) * r, 4 * s, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  } else if (rarity >= 3) {
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2 + animFrame * 0.02;
+      const r = 44 * s + Math.sin(animFrame * 0.03 + i * 2) * 5;
+      ctx.fillStyle = '#bb86fc';
+      ctx.globalAlpha = 0.25 + Math.sin(animFrame * 0.05 + i) * 0.15;
+      ctx.beginPath();
+      ctx.arc(x + Math.cos(a) * r, y + Math.sin(a) * r, 3 * s, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+  ctx.shadowBlur = 0;
+
+  // 图标
+  ctx.font = `${60 * s}px Arial`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(item.icon, x, y - 4);
+}
+
+function drawRarityTag(name, rarityNum, x, y) {
+  const r = RARITY[rarityNum];
+  const text = `${r.emoji} ${name}（${r.name}）`;
+  ctx.font = 'bold 16px Arial';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  // 背景
+  const metrics = ctx.measureText(text);
+  const tw = metrics.width + 24;
+  const th = 28;
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ctx.beginPath();
+  ctx.roundRect(x - tw / 2, y - th / 2, tw, th, 14);
+  ctx.fill();
+
+  ctx.fillStyle = rarityNum >= 5 ? '#ffd700' : r.color;
+  ctx.fillText(text, x, y + 1);
+}
+
+// 全屏闪光
+let fullFlash = 0;
+let flashColor = '#ffd700';
+
+function renderCanvas() {
+  ctx.clearRect(0, 0, CW, CH);
+
+  // 背景
+  ctx.fillStyle = '#0d1b3e';
+  ctx.fillRect(0, 0, CW, CH);
+  // 装饰星星
+  for (let i = 0; i < 20; i++) {
+    const sx = (i * 137 + 50) % CW;
+    const sy = (i * 97 + 30) % CH;
+    const sa = 0.2 + Math.sin(animFrame * 0.02 + i) * 0.15;
+    ctx.fillStyle = `rgba(255,255,255,${sa})`;
+    ctx.beginPath();
+    ctx.arc(sx, sy, 1 + (i % 2), 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // 底部光晕
+  const glowGrad = ctx.createRadialGradient(CW / 2, CH, 0, CW / 2, CH, 120);
+  glowGrad.addColorStop(0, 'rgba(233,69,96,0.08)');
+  glowGrad.addColorStop(1, 'rgba(233,69,96,0)');
+  ctx.fillStyle = glowGrad;
+  ctx.fillRect(0, CH - 140, CW, 140);
+
+  if (animState === 'idle') {
+    drawBox(CW / 2, CH / 2 - 10, 75, {});
+    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+    ctx.font = '14px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText('点击抽奖试试运气', CW / 2, CH / 2 + 90);
+  } else if (animState === 'shaking') {
+    const intensity = animFrame > 10 ? 6 : 3;
+    drawBox(CW / 2, CH / 2 - 10, 75, { shake: intensity });
+  } else if (animState === 'glowing') {
+    const g = Math.sin(animFrame * 0.12) * 0.4 + 0.6;
+    drawBox(CW / 2, CH / 2 - 10, 75, { glow: g, shake: 1 });
+  } else if (animState === 'bursting') {
+    const progress = Math.min(1, animFrame / 20);
+    drawBox(CW / 2, CH / 2 - 10, 75 * (1 - progress * 0.7), { glow: 1 - progress });
+  } else if (animState === 'warp') {
+    ctx.fillStyle = `rgba(0,0,0,${Math.min(0.7, animFrame / 20 * 0.7)})`;
+    ctx.fillRect(0, 0, CW, CH);
+  } else if (animState === 'revealing' || animState === 'done') {
+    if (showItem) {
+      drawItemIcon(showItem, CW / 2, CH / 2 - 20, 1 + Math.sin(animFrame * 0.03) * 0.08);
+      drawRarityTag(showItem.name, showItem.rarity, CW / 2, CH / 2 + 60);
+    }
+  } else if (animState === 'zoom' || animState === 'zoomWaiting') {
+    // 全屏放大 + 暗角聚焦
+    if (showItem) {
+      const progress = animState === 'zoom' ? Math.min(1, animFrame / 20) : 1;
+      const zoom = animState === 'zoom' ? 1 + progress * 1.5 : 2.5;
+      const alpha = animState === 'zoom' ? Math.min(1, animFrame / 15) : 1;
+      ctx.fillStyle = `rgba(0,0,0,${0.6 + (animState === 'zoom' ? progress * 0.3 : 0.3)})`;
+      ctx.fillRect(0, 0, CW, CH);
+      drawItemIcon(showItem, CW / 2, CH / 2 - 10, zoom);
+      const r = RARITY[showItem.rarity];
+      ctx.globalAlpha = alpha;
+      drawRarityTag(showItem.name, showItem.rarity, CW / 2, CH / 2 + 80);
+      if (animState === 'zoom') {
+        ctx.fillStyle = 'rgba(255,255,255,0.5)';
+        ctx.font = '13px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.globalAlpha = Math.min(1, (animFrame - 20) / 10);
+        ctx.fillText('点击弹窗确定继续', CW / 2, CH - 20);
+        ctx.globalAlpha = 1;
+      }
+    }
+  }
+
+  // 光柱（物品背后的圣光）
+  if (lightPillar > 0 && showItem && (animState === 'warp' || animState === 'revealing' || animState === 'done')) {
+    // 大范围放射光
+    const grad = ctx.createRadialGradient(CW / 2, CH / 2 - 20, 0, CW / 2, CH / 2 - 20, 140);
+    grad.addColorStop(0, `rgba(255,255,255,${lightPillar * 0.5})`);
+    grad.addColorStop(0.2, `rgba(255,215,0,${lightPillar * 0.3})`);
+    grad.addColorStop(0.5, `rgba(233,69,96,${lightPillar * 0.15})`);
+    grad.addColorStop(1, 'rgba(233,69,96,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(CW / 2, CH / 2 - 20, 140, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 上下贯穿光柱
+    const colGrad = ctx.createLinearGradient(0, 0, 0, CH);
+    colGrad.addColorStop(0, 'rgba(255,215,0,0)');
+    colGrad.addColorStop(0.3, `rgba(255,215,0,${lightPillar * 0.12})`);
+    colGrad.addColorStop(0.5, `rgba(255,255,255,${lightPillar * 0.2})`);
+    colGrad.addColorStop(0.7, `rgba(255,215,0,${lightPillar * 0.12})`);
+    colGrad.addColorStop(1, 'rgba(255,215,0,0)');
+    ctx.fillStyle = colGrad;
+    ctx.fillRect(CW / 2 - 12, 0, 24, CH);
+  }
+
+  // 冲击波
+  for (const sw of [shockwave, shockwave2]) {
+    if (sw) {
+      const progress = 1 - (sw.radius / sw.maxRadius);
+      const alpha = progress * 0.7;
+      const width = 4 * progress + 1;
+      ctx.strokeStyle = sw.color;
+      ctx.globalAlpha = alpha;
+      ctx.lineWidth = width;
+      ctx.beginPath();
+      ctx.arc(sw.x, sw.y, sw.radius, 0, Math.PI * 2);
+      ctx.stroke();
+      // 内圈亮边
+      ctx.strokeStyle = '#fff';
+      ctx.globalAlpha = alpha * 0.3;
+      ctx.lineWidth = width * 0.5;
+      ctx.beginPath();
+      ctx.arc(sw.x, sw.y, sw.radius - 3, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+  ctx.globalAlpha = 1;
+
+  // 漩涡粒子
+  for (const p of warpParticles) {
+    const alpha = p.life / p.maxLife;
+    const px = p.x + Math.cos(p.baseAngle) * p.dist;
+    const py = p.y + Math.sin(p.baseAngle) * p.dist;
+    ctx.fillStyle = p.color;
+    ctx.globalAlpha = alpha * 0.8;
+    // 光晕
+    ctx.shadowColor = p.color;
+    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    ctx.arc(px, py, p.size * alpha, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.shadowBlur = 0;
+  ctx.globalAlpha = 1;
+
+  // 粒子
+  for (const p of particles) {
+    ctx.globalAlpha = p.life / p.maxLife;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * (p.life / p.maxLife), 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // 全屏闪光
+  if (fullFlash > 0) {
+    ctx.fillStyle = flashColor;
+    ctx.globalAlpha = Math.min(0.6, fullFlash / 30 * 0.6);
+    ctx.fillRect(0, 0, CW, CH);
+    ctx.globalAlpha = 1;
+    fullFlash -= 0.8;
+  }
+
+  // 暗角
+  if (screenVignette > 0.01) {
+    const v = screenVignette * 0.4;
+    const grad = ctx.createRadialGradient(CW / 2, CH / 2, CW * 0.15, CW / 2, CH / 2, CW * 0.7);
+    grad.addColorStop(0, 'rgba(0,0,0,0)');
+    grad.addColorStop(1, `rgba(0,0,0,${v})`);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, CW, CH);
+  }
+
+  // 常驻飘落粒子（出金特效）
+  for (const p of lingerParticles) {
+    const alpha = p.life / p.maxLife;
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.rotate(p.angle);
+    ctx.fillStyle = p.color;
+    ctx.globalAlpha = alpha * (0.4 + Math.sin(p.phase + animFrame * 0.05) * 0.15);
+    ctx.shadowColor = p.color;
+    ctx.shadowBlur = 4;
+    // 星形
+    const s = p.size;
+    ctx.beginPath();
+    ctx.moveTo(0, -s);
+    ctx.lineTo(s * 0.3, -s * 0.3);
+    ctx.lineTo(s, 0);
+    ctx.lineTo(s * 0.3, s * 0.3);
+    ctx.lineTo(0, s);
+    ctx.lineTo(-s * 0.3, s * 0.3);
+    ctx.lineTo(-s, 0);
+    ctx.lineTo(-s * 0.3, -s * 0.3);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+  ctx.shadowBlur = 0;
+  ctx.globalAlpha = 1;
+}
+
+// ========================================================================
+// 5. 抽奖逻辑（含保底）
+// ========================================================================
+function pickItem() {
+  save.pityEpic++;
+  save.pityLegendary++;
+
+  const rareProbs = [
+    { rarity: 1, prob: 0.50 },
+    { rarity: 2, prob: 0.30 },
+    { rarity: 3, prob: 0.15 },
+    { rarity: 4, prob: 0.04 },
+    { rarity: 5, prob: 0.01 }
+  ];
+
+  // 保底判定
+  const forceEpic = save.pityEpic >= 10;     // 10 抽必出史诗+
+  const forceLegendary = save.pityLegendary >= 50; // 50 抽必出传说+
+
+  let chosenRarity;
+  if (forceLegendary) {
+    chosenRarity = Math.random() < 0.5 ? 4 : 5; // 50%传说 50%限定
+  } else if (forceEpic) {
+    // 从史诗+中抽取
+    const weights = { 3: 0.65, 4: 0.30, 5: 0.05 };
+    const r = Math.random();
+    if (r < weights[3]) chosenRarity = 3;
+    else if (r < weights[3] + weights[4]) chosenRarity = 4;
+    else chosenRarity = 5;
+  } else {
+    // 正常概率
+    const r = Math.random();
+    let cum = 0;
+    chosenRarity = 1;
+    for (const entry of rareProbs) {
+      cum += entry.prob;
+      if (r <= cum) { chosenRarity = entry.rarity; break; }
+    }
+  }
+
+  // 从奖池中选符合稀有度的物品
+  const candidates = POOL.filter(p => p.rarity === chosenRarity);
+  const item = { ...candidates[Math.floor(Math.random() * candidates.length)] };
+
+  // 更新保底计数器
+  if (chosenRarity >= 3) save.pityEpic = 0;
+  if (chosenRarity >= 4) save.pityLegendary = 0;
+
+  return item;
+}
+
+let isDrawing = false;
+
+function doDraw(count) {
+  if (isDrawing) return;
+  initAudio();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+
+  const cost = count === 10 ? 900 : 100 * count;
+  if (save.coins < cost) {
+    alert('金币不足！去签到或商店获取金币吧~');
+    return;
+  }
+
+  isDrawing = true;
+  document.getElementById('btnDraw').disabled = true;
+  document.getElementById('btnDraw10').disabled = true;
+
+  save.coins -= cost;
+  save.totalDraws += count;
+  const results = [];
+  for (let i = 0; i < count; i++) {
+    const item = pickItem();
+    results.push(item);
+    save.collection[item.id] = (save.collection[item.id] || 0) + 1;
+  }
+  persist();
+  updateUI();
+
+  // 播放音效 & 动画
+  playDrawSFX();
+  animItems = results;
+  animIndex = 0;
+  startOpenAnim(results[0]);
+}
+
+function addCoinDebug() {
+  save.coins += 999999;
+  persist();
+  updateUI();
+}
+
+// ========================================================================
+// 6. 开盒动画状态机（豪华版 — 夸张特效）
+// ========================================================================
+
+// ——— 过场粒子类型 ———
+let warpParticles = [];
+let shockwave = null; // { x, y, radius, maxRadius, color }
+let shockwave2 = null;
+let lightPillar = 0;
+let screenVignette = 0;
+
+function spawnLightPillar() {
+  lightPillar = 1;
+}
+
+function spawnShockwave(x, y, color, maxR) {
+  shockwave = { x, y, radius: 10, maxRadius: maxR || 220, color };
+  // 第二道冲击波稍后触发
+  setTimeout(() => { shockwave2 = { x, y, radius: 10, maxRadius: (maxR || 220) * 0.7, color }; }, 120);
+}
+
+function spawnWarpVortex(x, y, count, color) {
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const dist = 10 + Math.random() * 80;
+    const dir = Math.random() > 0.5 ? 1 : -1;
+    warpParticles.push({
+      x, y,
+      baseAngle: angle,
+      dist,
+      speed: 0.02 + Math.random() * 0.06,
+      dir,
+      life: 50 + Math.random() * 30,
+      maxLife: 80,
+      size: 2 + Math.random() * 5,
+      color: color[Math.floor(Math.random() * color.length)]
+    });
+  }
+}
+
+function spawnBigBurst(x, y, rarity) {
+  const colors = rarity >= 5
+    ? ['#ff6b6b','#feca57','#48dbfb','#bb86fc','#ffd700','#fff','#ff9ff3']
+    : rarity >= 4
+      ? ['#ffd700','#ffec8b','#fff','#ffa500','#ff6b6b']
+      : rarity >= 3
+        ? ['#bb86fc','#9b59b6','#e94560','#fff']
+        : ['#64b5f6','#90caf9','#fff'];
+  spawnParticles(x, y, rarity >= 4 ? 80 : 40, {
+    spread: 10, speed: rarity >= 4 ? 10 : 7, life: 40, size: [3, 10],
+    color: colors
+  });
+  // 外圈爆裂
+  spawnParticles(x, y, rarity >= 4 ? 40 : 20, {
+    spread: 5, speed: rarity >= 4 ? 14 : 10, life: 25, size: [2, 5],
+    color: ['#fff', ...colors]
+  });
+  if (rarity >= 4) {
+    spawnGoldRays(CW / 2, CH / 2);
+    spawnRainbow(x, y);
+  }
+  spawnShockwave(x, y, rarity >= 4 ? '#ffd700' : rarity >= 3 ? '#bb86fc' : '#64b5f6', rarity >= 5 ? 260 : 220);
+}
+
+// ——— 状态机 ———
+function startOpenAnim(item) {
+  showItem = item;
+  animState = 'shaking';
+  animFrame = 0;
+  particles = [];
+  warpParticles = [];
+  lingerParticles = [];
+  shockwave = null;
+  shockwave2 = null;
+  lightPillar = 0;
+  screenVignette = 0;
+  fullFlash = 0;
+
+  const rarity = item.rarity;
+  if (rarity >= 5) {
+    flashColor = 'rgba(255,215,0,0.7)';
+    fullFlash = 30;
+  } else if (rarity >= 4) {
+    flashColor = 'rgba(255,215,0,0.4)';
+    fullFlash = 20;
+  } else if (rarity >= 3) {
+    flashColor = 'rgba(187,134,252,0.3)';
+    fullFlash = 10;
+  }
+
+  animLoop();
+}
+
+function spawnLinger(rarity) {
+  lingerParticles = [];
+  if (rarity < 3) return;
+  const isGold = rarity >= 4;
+  const count = rarity >= 5 ? 30 : rarity >= 4 ? 20 : 8;
+  const colors = rarity >= 5
+    ? ['#ffd700','#ffec8b','#fff','#ff6b6b','#48dbfb']
+    : rarity >= 4
+      ? ['#ffd700','#ffec8b','#fff','#ffa500']
+      : ['#bb86fc','#9b59b6','#e1bee7'];
+  for (let i = 0; i < count; i++) {
+    lingerParticles.push({
+      x: Math.random() * CW,
+      y: Math.random() * CH,
+      vx: (Math.random() - 0.5) * 0.5,
+      vy: -0.3 - Math.random() * 0.8,
+      size: 2 + Math.random() * (isGold ? 4 : 3),
+      color: colors[Math.floor(Math.random() * colors.length)],
+      angle: Math.random() * Math.PI * 2,
+      spin: (Math.random() - 0.5) * 0.04,
+      phase: Math.random() * Math.PI * 2,
+      life: 100 + Math.random() * 100,
+      maxLife: 200
+    });
+  }
+}
+
+function animLoop() {
+  if (animBusy) return;
+  animBusy = true;
+  animFrame += animSpeed;
+
+  if (animState === 'shaking') {
+    // 抖动加剧 → 裂痕闪烁
+    if (animFrame <= 10) {
+      // 轻微抖动
+    } else if (animFrame <= 25) {
+      // 剧烈抖动 + 背景闪烁
+      if (animFrame % 4 === 0) fullFlash = Math.max(fullFlash, 5);
+    }
+    if (animFrame > 35) {
+      animState = 'glowing';
+      animFrame = 0;
+    }
+  } else if (animState === 'glowing') {
+    // 强光脉冲 — 呼吸3次后爆炸
+    if (animFrame >= 5 && animFrame < 8 || animFrame >= 15 && animFrame < 18 || animFrame >= 25 && animFrame < 28) {
+      fullFlash = Math.max(fullFlash, 8);
+    }
+    if (animFrame > 35) {
+      animState = 'bursting';
+      animFrame = 0;
+      const rarity = showItem.rarity;
+      // 大爆裂
+      spawnBigBurst(CW / 2, CH / 2, rarity);
+      // 漩涡
+      if (rarity >= 5) {
+        spawnWarpVortex(CW / 2, CH / 2, 45, ['#ff6b6b','#feca57','#48dbfb','#bb86fc','#ff9ff3']);
+      } else if (rarity >= 4) {
+        spawnWarpVortex(CW / 2, CH / 2, 30, ['#ffd700','#ffa500','#fff']);
+      } else if (rarity >= 3) {
+        spawnWarpVortex(CW / 2, CH / 2, 18, ['#bb86fc','#9b59b6']);
+      }
+      playRevealSFX(rarity);
+      screenVignette = 1;
+    }
+  } else if (animState === 'bursting') {
+    if (animFrame > 20) {
+      animState = 'warp';
+      animFrame = 0;
+      spawnLightPillar();
+    }
+  } else if (animState === 'warp') {
+    // 暗幕 + 强漩涡 + 光柱升起
+    if (animFrame >= 1 && animFrame < 4 && showItem.rarity >= 4) {
+      spawnWarpVortex(CW / 2, CH / 2, 30, ['#fff', '#e94560', '#ffd700']);
+    }
+    if (animFrame > 40) {
+      animState = 'revealing';
+      animFrame = 0;
+      warpParticles = [];
+      // reveal 大爆发
+      const rarity = showItem.rarity;
+      spawnBigBurst(CW / 2, CH / 2, rarity);
+      if (rarity >= 3) {
+        fullFlash = Math.max(fullFlash, rarity >= 4 ? 15 : 8);
+        screenVignette = 1;
+      }
+      spawnLinger(rarity);
+    }
+  } else if (animState === 'revealing') {
+    if (animFrame >= 10 && animFrame < 14) {
+      const rarity = showItem.rarity;
+      // 持续掉落的残留粒子
+      if (rarity >= 4) {
+        spawnParticles(CW / 2, 0, 10, { spread: 12, speed: 3, life: 30, size: [2, 4], color: ['#ffd700','#fff','#ffec8b'] });
+      }
+    }
+    if (animFrame > 70) {
+      // 出金（史诗+）进入全屏放大，否则直接 done
+      if (showItem.rarity >= 3) {
+        animState = 'zoom';
+        animFrame = 0;
+      } else {
+        animState = 'done';
+        if (animIndex + 1 < animItems.length) {
+          animIndex++;
+          showResultList();
+        }
+      }
+    }
+  }
+
+  // 更新粒子
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vy += 0.06;
+    p.vx *= 0.97;
+    p.life--;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+  // 更新漩涡粒子
+  for (let i = warpParticles.length - 1; i >= 0; i--) {
+    const p = warpParticles[i];
+    p.baseAngle += p.speed * p.dir;
+    p.dist *= 0.97;
+    p.x += Math.cos(p.baseAngle) * p.dist * 0.03;
+    p.y += Math.sin(p.baseAngle) * p.dist * 0.03;
+    p.life--;
+    if (p.life <= 0 || p.dist < 3) warpParticles.splice(i, 1);
+  }
+  // 冲击波
+  if (shockwave) shockwave.radius += 4;
+  if (shockwave && shockwave.radius > shockwave.maxRadius) shockwave = null;
+  if (shockwave2) shockwave2.radius += 4;
+  if (shockwave2 && shockwave2.radius > shockwave2.maxRadius) shockwave2 = null;
+  // 光柱衰减
+  if (lightPillar > 0) lightPillar -= 0.02;
+  // 暗角衰减
+  if (screenVignette > 0) screenVignette -= 0.02;
+
+  // 更新常驻粒子
+  for (let i = lingerParticles.length - 1; i >= 0; i--) {
+    const p = lingerParticles[i];
+    p.x += p.vx + Math.sin(p.phase + animFrame * 0.01) * 0.3;
+    p.y += p.vy;
+    p.angle += p.spin;
+    p.life--;
+    if (p.life <= 0) lingerParticles.splice(i, 1);
+  }
+  // 常驻补充
+  if ((animState === 'revealing' || animState === 'done' || animState === 'zoom' || animState === 'zoomWaiting') && showItem && showItem.rarity >= 3) {
+    if (animFrame % 3 === 0) {
+      const isGold = showItem.rarity >= 4;
+      lingerParticles.push({
+        x: Math.random() * CW,
+        y: CH + 5,
+        vx: (Math.random() - 0.5) * 0.3,
+        vy: -0.3 - Math.random() * (isGold ? 0.8 : 0.5),
+        size: 1.5 + Math.random() * (isGold ? 3 : 2),
+        color: isGold
+          ? ['#ffd700','#ffec8b','#fff','#ffa500'][Math.floor(Math.random() * 4)]
+          : ['#bb86fc','#9b59b6','#e1bee7'][Math.floor(Math.random() * 3)],
+        angle: Math.random() * Math.PI * 2,
+        spin: (Math.random() - 0.5) * 0.04,
+        phase: Math.random() * Math.PI * 2,
+        life: 80 + Math.random() * 80,
+        maxLife: 160
+      });
+    }
+  }
+
+  renderCanvas();
+
+  if (animState === 'zoom' && animFrame > 50) {
+    animState = 'zoomWaiting';
+    animBusy = false;
+    setTimeout(() => showResultPopup(), 0);
+    return;
+  }
+
+  animBusy = false;
+  if (animState !== 'done' || animFrame < 10) {
+    requestAnimationFrame(animLoop);
+  } else {
+    if (animIndex === 0 || animIndex >= animItems.length - 1) {
+      showResultPopup();
+    }
+  }
+}
+
+function showResultList() {
+  showItem = animItems[animIndex];
+  animState = 'revealing';
+  animFrame = 0;
+  particles = [];
+  warpParticles = [];
+  lingerParticles = [];
+  shockwave = null;
+  shockwave2 = null;
+  lightPillar = 0;
+  screenVignette = 0;
+  const rarity = showItem.rarity;
+  spawnLinger(rarity);
+  spawnBigBurst(CW / 2, CH / 2, rarity);
+  if (rarity >= 5) {
+    fullFlash = 20;
+    flashColor = 'rgba(255,215,0,0.7)';
+  } else if (rarity >= 4) {
+    fullFlash = 12;
+    flashColor = 'rgba(255,215,0,0.4)';
+  } else if (rarity >= 3) {
+    fullFlash = 6;
+    flashColor = 'rgba(187,134,252,0.3)';
+  }
+  screenVignette = 1;
+  playRevealSFX(rarity);
+  animLoop();
+}
+
+function showResultPopup() {
+  const modal = document.getElementById('resultModal');
+  const title = document.getElementById('resultTitle');
+  const content = document.getElementById('resultContent');
+
+  // 出金放大模式 — 只显示当前单件
+  if (animState === 'zoomWaiting' || animState === 'zoom') {
+    const item = showItem;
+    title.textContent = `🌟 获得 ${item.name}！`;
+    const r = RARITY[item.rarity];
+    const series = SERIES[item.series];
+    content.innerHTML = `<div style="font-size:90px;margin:10px 0">${item.icon}</div>
+      <div style="color:${r.color};font-size:22px;font-weight:bold">${r.emoji} ${r.name}</div>
+      <div style="color:rgba(255,255,255,0.5);font-size:14px;margin-top:6px">${series.icon} ${series.name} · ${item.name}</div>`;
+    modal.classList.add('show');
+    return;
+  }
+
+  if (animItems.length === 1) {
+    const item = animItems[0];
+    title.textContent = `🎉 抽到了 ${item.name}！`;
+    const r = RARITY[item.rarity];
+    content.innerHTML = `<div style="font-size:80px;margin:10px 0">${item.icon}</div>
+      <div style="color:${r.color};font-size:18px;font-weight:bold">${r.emoji} ${r.name}</div>
+      <div style="color:rgba(255,255,255,0.5);font-size:13px;margin-top:6px">系列：${SERIES[item.series].icon} ${SERIES[item.series].name}</div>`;
+  } else {
+    const counts = {};
+    for (const item of animItems) {
+      counts[item.rarity] = (counts[item.rarity] || 0) + 1;
+    }
+    title.textContent = `🎉 十连抽结果`;
+    let html = '<div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin:10px 0">';
+    for (const item of animItems) {
+      html += `<div style="background:rgba(255,255,255,0.05);border-radius:10px;padding:8px;width:70px;text-align:center;border:1px solid ${RARITY[item.rarity].color}33">
+        <div style="font-size:30px">${item.icon}</div>
+        <div style="font-size:10px;color:${RARITY[item.rarity].color};margin-top:4px">${item.name}</div>
+      </div>`;
+    }
+    html += '</div>';
+    html += '<div style="color:rgba(255,255,255,0.5);font-size:12px;margin-top:8px">';
+    for (const [rarity, count] of Object.entries(counts)) {
+      html += `${RARITY[rarity].emoji}×${count} `;
+    }
+    html += '</div>';
+    content.innerHTML = html;
+  }
+  modal.classList.add('show');
+}
+
+// ========================================================================
+// 7. UI 更新 & 弹窗
+// ========================================================================
+function updateUI() {
+  document.getElementById('coinCount').textContent = save.coins;
+  document.getElementById('totalDraws').textContent = save.totalDraws;
+
+  const epicPity = save.pityEpic;
+  const legPity = save.pityLegendary;
+  document.getElementById('pityEpicFill').style.width = `${Math.min(100, (epicPity / 10) * 100)}%`;
+  document.getElementById('pityEpicText').textContent = `${epicPity}/10`;
+  document.getElementById('pityLegendaryFill').style.width = `${Math.min(100, (legPity / 50) * 100)}%`;
+  document.getElementById('pityLegendaryText').textContent = `${legPity}/50`;
+
+  document.getElementById('btnDraw').disabled = save.coins < 100;
+  document.getElementById('btnDraw10').disabled = save.coins < 900;
+}
+
+function unlockDrawButtons() {
+  isDrawing = false;
+  lingerParticles = [];
+  if (animState !== 'revealing') animState = 'idle';
+  document.getElementById('btnDraw').disabled = save.coins < 100;
+  document.getElementById('btnDraw10').disabled = save.coins < 900;
+}
+
+function closeModal(id) {
+  document.getElementById(id).classList.remove('show');
+  if (id === 'resultModal') {
+    // 出金放大确认后继续十连
+    if (animState === 'zoomWaiting' && animIndex + 1 < animItems.length) {
+      animIndex++;
+      showResultList();
+      return;
+    }
+    unlockDrawButtons();
+  }
+}
+
+function showCollection() {
+  const grid = document.getElementById('collectionGrid');
+  const progress = document.getElementById('collectionProgress');
+  const owned = Object.keys(save.collection);
+  const total = POOL.length;
+  progress.textContent = `收集进度：${owned.length}/${total}`;
+
+  grid.innerHTML = POOL.map(item => {
+    const count = save.collection[item.id] || 0;
+    const isOwned = count > 0;
+    const r = RARITY[item.rarity];
+    const series = SERIES[item.series];
+    return `<div class="collection-card ${isOwned ? 'owned' : 'locked'} ${r.bgClass}">
+      <span class="icon">${item.icon}</span>
+      <span class="name">${item.name}</span>
+      <span class="rarity-tag ${r.tagClass}">${r.emoji}</span>
+      ${isOwned ? `<div style="font-size:10px;color:rgba(255,255,255,0.3);margin-top:2px">×${count}</div>` : ''}
+    </div>`;
+  }).join('');
+
+  document.getElementById('collectionModal').classList.add('show');
+}
+
+let shopItemsGenerated = false;
+
+function showShop() {
+  const modal = document.getElementById('shopContent');
+  if (!shopItemsGenerated) {
+    modal.innerHTML = `
+      <div class="shop-item">
+        <div class="shop-item-info">
+          <span class="shop-item-icon">🪙</span>
+          <span class="shop-item-name">金币礼包（小）</span>
+        </div>
+        <div><span class="shop-item-cost">广告观看</span> <button class="btn btn-small btn-checkin" onclick="buyCoinPack(200)">领取</button></div>
+      </div>
+      <div class="shop-item">
+        <div class="shop-item-info">
+          <span class="shop-item-icon">🪙</span>
+          <span class="shop-item-name">金币礼包（大）</span>
+        </div>
+        <div><span class="shop-item-cost">广告观看</span> <button class="btn btn-small btn-checkin" onclick="buyCoinPack(500)">领取</button></div>
+      </div>
+      <div class="shop-item">
+        <div class="shop-item-info">
+          <span class="shop-item-icon">🎫</span>
+          <span class="shop-item-name">抽奖券 ×5（立即获得）</span>
+        </div>
+        <div><span class="shop-item-cost">🪙 400</span> <button class="btn btn-small btn-draw" onclick="buyCoupon()">购买</button></div>
+      </div>
+      <div class="shop-item">
+        <div class="shop-item-info">
+          <span class="shop-item-icon">🔄</span>
+          <span class="shop-item-name">重置保底计数（下不为例）</span>
+        </div>
+        <div><span class="shop-item-cost">🪙 200</span> <button class="btn btn-small btn-shop" onclick="resetPity()">重置</button></div>
+      </div>
+    `;
+    shopItemsGenerated = true;
+  }
+  document.getElementById('shopModal').classList.add('show');
+}
+
+function buyCoinPack(amount) {
+  initAudio();
+  save.coins += amount;
+  persist();
+  updateUI();
+  playBuySFX();
+  alert(`获得 ${amount} 金币！感谢观看广告~`);
+}
+
+function buyCoupon() {
+  if (save.coins < 400) { alert('金币不足！'); return; }
+  save.coins -= 400;
+  save.totalDraws += 5;
+  for (let i = 0; i < 5; i++) {
+    const item = pickItem();
+    save.collection[item.id] = (save.collection[item.id] || 0) + 1;
+  }
+  persist();
+  updateUI();
+  playBuySFX();
+  alert('获得 5 次抽奖机会！结果已加入图鉴~');
+}
+
+function resetPity() {
+  if (save.coins < 200) { alert('金币不足！'); return; }
+  save.coins -= 200;
+  save.pityEpic = 0;
+  save.pityLegendary = 0;
+  persist();
+  updateUI();
+  playBuySFX();
+  alert('保底计数已重置！');
+}
+
+function doCheckin() {
+  const modal = document.getElementById('checkinContent');
+  const today = new Date().toISOString().slice(0, 10);
+  const already = save.lastCheckin === today;
+
+  let html = '';
+  if (already) {
+    html = `<div class="checkin-status">✅ 今日已签到！明天再来吧~</div>`;
+  } else {
+    const streak = save.lastCheckin === getYesterday() ? save.checkinStreak + 1 : 1;
+    const bonus = Math.min(streak, 7);
+    const coins = 50 + bonus * 20;
+    html = `<div class="checkin-status">
+      <div style="font-size:60px;margin:10px 0">📅</div>
+      <div style="color:#fff;font-size:18px;font-weight:bold;margin:8px 0">签到成功！</div>
+      <div style="color:#FFD700;font-size:24px">+${coins} 🪙</div>
+      <div style="color:rgba(255,255,255,0.4);font-size:12px;margin-top:8px">连续签到 ${bonus} 天</div>
+    </div>`;
+    save.coins += coins;
+    save.lastCheckin = today;
+    save.checkinStreak = streak;
+    persist();
+    updateUI();
+    playCheckinSFX();
+  }
+
+  // 显示本周签到状态
+  html += '<div style="display:flex;justify-content:center;gap:6px;margin-top:12px">';
+  for (let i = 0; i < 7; i++) {
+    const d = new Date();
+    d.setDate(d.getDate() - d.getDay() + i);
+    const dateStr = d.toISOString().slice(0, 10);
+    const done = dateStr < today || (dateStr === today && already);
+    const isToday = dateStr === today;
+    const dayNames = ['日','一','二','三','四','五','六'];
+    html += `<div style="text-align:center;padding:6px 8px;border-radius:8px;background:${done ? 'rgba(39,174,96,0.2)' : isToday ? 'rgba(255,215,0,0.15)' : 'rgba(255,255,255,0.04)'};border:1px solid ${isToday ? 'rgba(255,215,0,0.3)' : 'transparent'}">
+      <div style="font-size:11px;color:rgba(255,255,255,0.4)">${dayNames[i]}</div>
+      <div style="font-size:16px;margin-top:4px">${done ? '✅' : isToday ? '👆' : '⬜'}</div>
+    </div>`;
+  }
+  html += '</div>';
+
+  modal.innerHTML = html;
+  document.getElementById('checkinModal').classList.add('show');
+}
+
+function getYesterday() {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
+// ========================================================================
+// 8. 初始化
+// ========================================================================
+loadSave();
+updateUI();
+
+// 默认展示 idle
+(function idleLoop() {
+  animFrame++;
+  if (animState === 'idle') renderCanvas();
+  if (animState === 'idle') requestAnimationFrame(idleLoop);
+})();
+</script>
+</body>
+</html>
