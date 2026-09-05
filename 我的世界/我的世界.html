@@ -1005,7 +1005,14 @@ function toggleAdmin() {
   }
 }
 
-$('adClose').addEventListener('click', () => { adOpen = false; $('admin-panel').style.display = 'none'; });
+$('adClose').addEventListener('click', () => {
+  adOpen = false;
+  $('admin-panel').style.display = 'none';
+  if (gameStarted) {
+    $('blocker').style.display = 'flex';
+    $('playBtn').textContent = '🎮 继续游戏';
+  }
+});
 
 // Time controls
 $('adMorning').addEventListener('click', () => { dayT = 0.25; showNotif('⏰ 设置时间: 早晨'); updateAdInfo(); });
@@ -1267,11 +1274,17 @@ function stopAutoSave() {
 }
 
 function getSaveData() {
-  // Collect modified chunk data
+  // Sparse save: only store non-air blocks per chunk
   const chunkData = {};
   chunks.forEach((data, key) => {
-    // Only save chunks that differ from generation
-    chunkData[key] = data;
+    const blocks = [];
+    for (let x = 0; x < CS; x++)
+      for (let y = 0; y < WH; y++)
+        for (let z = 0; z < CS; z++) {
+          const id = data[x][y][z];
+          if (id !== 0) blocks.push(x, y, z, id);
+        }
+    chunkData[key] = blocks;
   });
   return {
     player: {
@@ -1323,7 +1336,20 @@ function loadSaveData(data) {
   chunkBufs.forEach((m, k) => { if (m) { gl.deleteBuffer(m.vb); gl.deleteBuffer(m.ib); } });
   chunkBufs.clear();
   if (data.chunkData) {
-    for (const key in data.chunkData) chunks.set(key, data.chunkData[key]);
+    for (const key in data.chunkData) {
+      // Regenerate chunk from seed first
+      const parts = key.split(',');
+      const cx = parseInt(parts[0]), cz = parseInt(parts[1]);
+      const d = genChunk(cx, cz);
+      // Apply saved block modifications (sparse format: x,y,z,id,...)
+      const blocks = data.chunkData[key];
+      if (Array.isArray(blocks)) {
+        for (let i = 0; i < blocks.length; i += 4) {
+          d[blocks[i]][blocks[i+1]][blocks[i+2]] = blocks[i+3];
+        }
+      }
+      chunks.set(key, d);
+    }
   }
   // Rebuild chunk meshes near player
   const pcx = Math.floor(P.x / CS), pcz = Math.floor(P.z / CS);
