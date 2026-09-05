@@ -1,0 +1,1502 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>我的世界 - Minecraft Style</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#87CEEB;font-family:'Segoe UI',Arial,sans-serif}
+canvas#gameCanvas{display:block;position:fixed;top:0;left:0;width:100%;height:100%;z-index:0}
+#blocker{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.75);display:none;align-items:center;justify-content:center;z-index:100;flex-direction:column}
+#blocker h1{color:#fff;font-size:48px;margin-bottom:10px;text-shadow:3px 3px 0 #000}
+#blocker p{color:#ccc;font-size:18px;margin-bottom:5px}
+#blocker .start-btn{margin-top:30px;padding:15px 40px;font-size:22px;background:#4a8;color:#fff;border:3px solid #2a6;border-radius:8px;cursor:pointer;transition:all .2s}
+#blocker .start-btn:hover{background:#5b9;transform:scale(1.05)}
+#blocker .controls{margin-top:20px;color:#aaa;font-size:14px;line-height:1.8}
+#crosshair{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:50;pointer-events:none;display:none}
+#crosshair::before,#crosshair::after{content:'';position:absolute;background:#fff;opacity:0.8}
+#crosshair::before{width:20px;height:2px;top:-1px;left:-10px}
+#crosshair::after{width:2px;height:20px;top:-10px;left:-1px}
+#hud{position:fixed;top:10px;left:10px;color:#fff;font-size:14px;z-index:50;text-shadow:1px 1px 2px #000;pointer-events:none;display:none;line-height:1.6}
+#hotbar{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);display:none;gap:4px;z-index:50;background:rgba(0,0,0,0.6);padding:6px;border-radius:8px;border:2px solid #555}
+.slot{width:50px;height:50px;background:rgba(80,80,80,0.8);border:2px solid #444;border-radius:4px;display:flex;align-items:center;justify-content:center;position:relative;cursor:pointer}
+.slot.active{border-color:#fff;background:rgba(120,120,120,0.9)}
+.slot canvas{width:36px;height:36px;image-rendering:pixelated}
+.slot .count{position:absolute;bottom:2px;right:4px;color:#fff;font-size:11px;font-weight:bold;text-shadow:1px 1px 0 #000}
+.slot .key{position:absolute;top:2px;left:4px;color:#aaa;font-size:10px}
+#healthbar{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);display:none;gap:2px;z-index:50}
+.heart{width:16px;height:16px;font-size:14px}
+.heart.on{color:#e22}
+.heart.off{color:#444}
+#inventory{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(30,30,30,0.95);border:3px solid #666;border-radius:10px;padding:20px;z-index:200;display:none;min-width:380px}
+#inventory h2{color:#fff;text-align:center;margin-bottom:15px;font-size:20px}
+#inv-grid{display:grid;grid-template-columns:repeat(9,50px);gap:4px;justify-content:center}
+#crafting-panel{margin-top:15px;border-top:2px solid #555;padding-top:15px}
+#crafting-panel h3{color:#ccc;font-size:14px;margin-bottom:10px}
+#recipe-list{display:flex;flex-wrap:wrap;gap:6px;justify-content:center}
+.recipe-btn{padding:6px 12px;background:#3a5a3a;color:#fff;border:2px solid #4a7;border-radius:4px;cursor:pointer;font-size:12px;transition:all .15s}
+.recipe-btn:hover{background:#4a7}
+.recipe-btn.disabled{opacity:0.4;cursor:not-allowed}
+#notification{position:fixed;top:60px;left:50%;transform:translateX(-50%);color:#fff;background:rgba(0,0,0,0.7);padding:8px 20px;border-radius:20px;z-index:50;pointer-events:none;opacity:0;transition:opacity .3s;font-size:14px;display:none}
+#loading{position:fixed;top:0;left:0;width:100%;height:100%;background:#222;display:flex;align-items:center;justify-content:center;z-index:300;flex-direction:column;color:#fff;font-size:20px}
+#loading .bar{width:300px;height:6px;background:#444;border-radius:3px;margin-top:15px;overflow:hidden}
+#loading .bar-fill{height:100%;background:#4a8;width:0%;transition:width .3s;border-radius:3px}
+#admin-panel{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(20,20,30,0.96);border:2px solid #555;border-radius:12px;padding:0;z-index:250;display:none;width:600px;max-height:80vh;overflow-y:auto;color:#eee;font-size:13px;box-shadow:0 0 40px rgba(0,0,0,0.6)}
+#admin-panel::-webkit-scrollbar{width:8px}
+#admin-panel::-webkit-scrollbar-track{background:#222}
+#admin-panel::-webkit-scrollbar-thumb{background:#555;border-radius:4px}
+.ad-header{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:linear-gradient(135deg,#1a1a2e,#16213e);border-bottom:2px solid #444;border-radius:12px 12px 0 0}
+.ad-header h2{margin:0;font-size:18px;color:#ff6b6b}
+.ad-close{background:none;border:2px solid #666;color:#fff;width:32px;height:32px;border-radius:6px;cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;transition:all .15s}
+.ad-close:hover{background:#c33;border-color:#c33}
+.ad-section{padding:12px 18px;border-bottom:1px solid #333}
+.ad-section:last-child{border-bottom:none}
+.ad-section h3{margin:0 0 10px 0;font-size:14px;color:#aaa;text-transform:uppercase;letter-spacing:1px}
+.ad-row{display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
+.ad-btn{padding:7px 14px;background:#2a4a2a;color:#cfc;border:1px solid #4a7;border-radius:5px;cursor:pointer;font-size:12px;transition:all .15s;white-space:nowrap}
+.ad-btn:hover{background:#3a6a3a;transform:translateY(-1px)}
+.ad-btn.warn{background:#5a3a1a;color:#fc8;border-color:#a83}
+.ad-btn.warn:hover{background:#7a4a1a}
+.ad-btn.danger{background:#5a1a1a;color:#f88;border-color:#a33}
+.ad-btn.danger:hover{background:#7a2a2a}
+.ad-btn.active{background:#2a6a4a;color:#8fc;border-color:#4c8;box-shadow:0 0 8px rgba(68,204,136,0.3)}
+.ad-input{padding:6px 10px;background:#1a1a2e;border:1px solid #444;color:#eee;border-radius:4px;font-size:12px;width:60px;text-align:center}
+.ad-input:focus{border-color:#6af;outline:none}
+.ad-input.wide{width:100px}
+.ad-label{color:#999;font-size:12px}
+.ad-select{padding:6px 10px;background:#1a1a2e;border:1px solid #444;color:#eee;border-radius:4px;font-size:12px;cursor:pointer}
+.ad-select:focus{border-color:#6af;outline:none}
+.ad-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(70px,1fr));gap:6px}
+.ad-block-btn{padding:8px 4px;background:#2a2a3a;border:2px solid #444;border-radius:6px;cursor:pointer;text-align:center;transition:all .15s}
+.ad-block-btn:hover{border-color:#6af;background:#2a2a5a}
+.ad-block-btn.selected{border-color:#4f8;background:#2a4a3a}
+.ad-block-btn canvas{display:block;margin:0 auto 4px}
+.ad-block-btn span{font-size:10px;color:#ccc}
+.ad-status{padding:6px 10px;background:#1a2a1a;border:1px solid #4a7;border-radius:4px;color:#8fc;font-size:11px;margin-top:6px}
+.save-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+.save-slot{background:#1a1a2e;border:2px solid #444;border-radius:8px;padding:12px 8px;text-align:center;cursor:pointer;transition:all .15s}
+.save-slot:hover{border-color:#6af;background:#1e2a4a}
+.save-slot.has-save{border-color:#4a7}
+.save-slot.has-save:hover{border-color:#6f8;background:#1e3a2e}
+.save-slot .slot-num{font-size:22px;font-weight:bold;color:#888;margin-bottom:6px}
+.save-slot.has-save .slot-num{color:#6f8}
+.save-slot .slot-info{font-size:10px;color:#777;line-height:1.5}
+.save-slot.has-save .slot-info{color:#aaa}
+.save-slot .slot-name{font-size:12px;color:#ccc;margin-bottom:4px;font-weight:bold}
+.save-slot.has-save .slot-name{color:#8fc}
+.save-slot .slot-actions{display:flex;gap:4px;margin-top:8px;justify-content:center}
+.save-slot .slot-actions button{padding:4px 8px;font-size:10px;border-radius:4px;border:1px solid #555;cursor:pointer;transition:all .12s}
+.save-btn-save{background:#2a4a2a;color:#8fc;border-color:#4a7 !important}
+.save-btn-save:hover{background:#3a6a3a}
+.save-btn-load{background:#2a3a5a;color:#8bf;border-color:#4a7a !important}
+.save-btn-load:hover{background:#3a5a7a}
+.save-btn-del{background:#4a2a2a;color:#f88;border-color:#a33 !important}
+.save-btn-del:hover{background:#6a3a3a}
+.save-empty{color:#555;font-size:10px;margin-top:4px}
+.ad-rename-input{width:100%;padding:4px 6px;background:#111;border:1px solid #555;color:#eee;border-radius:3px;font-size:11px;margin-top:4px;text-align:center}
+#save-select{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(10,10,20,0.92);display:none;align-items:center;justify-content:center;z-index:150;flex-direction:column}
+.ss-title{color:#fff;font-size:42px;margin-bottom:8px;text-shadow:3px 3px 0 #000}
+.ss-sub{color:#aaa;font-size:16px;margin-bottom:24px}
+.ss-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:24px}
+.ss-slot{background:rgba(30,30,50,0.9);border:2px solid #444;border-radius:12px;padding:16px 12px;text-align:center;cursor:pointer;transition:all .2s;width:140px;min-height:160px;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.ss-slot:hover{border-color:#6af;background:rgba(30,50,80,0.95);transform:translateY(-4px);box-shadow:0 6px 20px rgba(0,0,0,0.4)}
+.ss-slot.has-save{border-color:#4a7}
+.ss-slot.has-save:hover{border-color:#6f8;background:rgba(30,60,40,0.95)}
+.ss-slot .ss-num{font-size:28px;color:#555;font-weight:bold;margin-bottom:8px}
+.ss-slot.has-save .ss-num{color:#6f8}
+.ss-slot .ss-name{color:#ddd;font-size:14px;font-weight:bold;margin-bottom:6px}
+.ss-slot.has-save .ss-name{color:#8fc}
+.ss-slot .ss-info{color:#888;font-size:11px;line-height:1.6}
+.ss-slot.has-save .ss-info{color:#aaa}
+.ss-slot .ss-empty{color:#555;font-size:12px}
+.ss-new-btn{padding:14px 36px;font-size:20px;background:linear-gradient(135deg,#2a6a2a,#3a8a3a);color:#fff;border:3px solid #4a8;border-radius:10px;cursor:pointer;transition:all .2s;margin-bottom:16px}
+.ss-new-btn:hover{background:linear-gradient(135deg,#3a8a3a,#4aaa4a);transform:scale(1.05);box-shadow:0 4px 16px rgba(68,170,68,0.4)}
+.ss-tip{color:#666;font-size:13px}
+</style>
+</head>
+<body>
+<div id="loading">
+<div>⛏️ 正在加载我的世界...</div>
+<div class="bar"><div class="bar-fill" id="loadBar"></div></div>
+<div id="loadText" style="margin-top:10px;font-size:14px;color:#aaa">初始化...</div>
+</div>
+<canvas id="gameCanvas"></canvas>
+<div id="blocker">
+<h1>⛏️ 我的世界</h1>
+<p>Minecraft Style 3D Voxel Game</p>
+<button class="start-btn" id="playBtn">🎮 继续游戏</button>
+<div class="controls">
+<p>WASD - 移动 | 空格 - 跳跃 | Shift - 潜行</p>
+<p>鼠标左键 - 破坏方块 | 鼠标右键 - 放置方块</p>
+<p>1-9 / 滚轮 - 切换物品 | E - 背包 | F - 飞行模式</p>
+<p>Tab 或 ESC - 释放鼠标 | P - 管理员面板</p>
+<p>Ctrl+S - 快速存档 | Ctrl+L - 快速读档</p>
+</div>
+</div>
+<div id="save-select">
+<div class="ss-title">⛏️ 我的世界</div>
+<div class="ss-sub">选择存档开始游戏</div>
+<div class="ss-grid" id="ssGrid"></div>
+<button class="ss-new-btn" id="ssNewBtn">🌍 新建世界</button>
+<div class="ss-tip">点击存档加载 · 空档位自动创建新世界</div>
+</div>
+<div id="crosshair"></div>
+<div id="hud">
+<div id="fps">FPS: 0</div>
+<div id="coords">XYZ: 0 / 0 / 0</div>
+<div id="block-info">方块: -</div>
+</div>
+<div id="healthbar"></div>
+<div id="hotbar"></div>
+<div id="inventory">
+<h2>📦 背包</h2>
+<div id="inv-grid"></div>
+<div id="crafting-panel">
+<h3>🔨 合成</h3>
+<div id="recipe-list"></div>
+</div>
+</div>
+<div id="notification"></div>
+<div id="admin-panel">
+  <div class="ad-header">
+    <h2>⚙️ 管理员面板</h2>
+    <button class="ad-close" id="adClose">✕</button>
+  </div>
+  <div class="ad-section" id="adTime">
+    <h3>⏰ 时间控制</h3>
+    <div class="ad-row">
+      <button class="ad-btn" id="adMorning">🌅 早晨</button>
+      <button class="ad-btn" id="adNoon">☀️ 正午</button>
+      <button class="ad-btn" id="adDusk">🌇 黄昏</button>
+      <button class="ad-btn" id="adNight">🌙 夜晚</button>
+      <button class="ad-btn" id="adFreeze">❄️ 冻结时间</button>
+    </div>
+  </div>
+  <div class="ad-section">
+    <h3>📍 传送</h3>
+    <div class="ad-row">
+      <span class="ad-label">X:</span><input class="ad-input" id="adTx" type="number" value="0">
+      <span class="ad-label">Y:</span><input class="ad-input" id="adTy" type="number" value="64">
+      <span class="ad-label">Z:</span><input class="ad-input" id="adTz" type="number" value="0">
+      <button class="ad-btn" id="adTeleport">🚀 传送</button>
+      <button class="ad-btn" id="adTPHere">📍 传送到准星</button>
+    </div>
+  </div>
+  <div class="ad-section">
+    <h3>🎁 获取物品</h3>
+    <div class="ad-row">
+      <span class="ad-label">数量:</span>
+      <input class="ad-input" id="adGiveCount" type="number" value="64" min="1" max="64">
+      <button class="ad-btn active" id="adGiveBtn">给予选中方块</button>
+    </div>
+    <div class="ad-grid" id="adBlockGrid"></div>
+  </div>
+  <div class="ad-section">
+    <h3>🛡️ 玩家设置</h3>
+    <div class="ad-row">
+      <button class="ad-btn" id="adGodMode">💀 无敌模式</button>
+      <button class="ad-btn" id="adHeal">💚 满血</button>
+      <button class="ad-btn" id="adFly">🦅 切换飞行</button>
+      <button class="ad-btn" id="adSuicide">☠️ 自杀</button>
+    </div>
+    <div class="ad-row">
+      <span class="ad-label">移动速度:</span>
+      <input class="ad-input wide" id="adSpeed" type="range" min="1" max="30" value="5.5" step="0.5">
+      <span class="ad-label" id="adSpeedVal">5.5</span>
+    </div>
+    <div class="ad-row">
+      <span class="ad-label">跳跃高度:</span>
+      <input class="ad-input wide" id="adJump" type="range" min="1" max="20" value="8.5" step="0.5">
+      <span class="ad-label" id="adJumpVal">8.5</span>
+    </div>
+  </div>
+  <div class="ad-section">
+    <h3>🌍 世界编辑</h3>
+    <div class="ad-row">
+      <span class="ad-label">半径:</span>
+      <input class="ad-input" id="adFillR" type="number" value="5" min="1" max="50">
+      <button class="ad-btn" id="adFill">填充方块</button>
+      <button class="ad-btn warn" id="adFlatten">🔨 平整地形</button>
+      <button class="ad-btn danger" id="adExplode">💥 爆炸(清除)</button>
+    </div>
+  </div>
+  <div class="ad-section">
+    <h3>💾 存档管理 (5个存档位)</h3>
+    <div class="save-grid" id="saveGrid"></div>
+    <div class="ad-row" style="margin-top:10px">
+      <button class="ad-btn" id="adAutoSave" title="每60秒自动保存">🔄 自动保存: 关</button>
+    </div>
+  </div>
+  <div class="ad-section">
+    <h3>📋 信息</h3>
+    <div class="ad-status" id="adInfo"></div>
+  </div>
+</div>
+
+<script>
+'use strict';
+// ============================================================
+//  我的世界 - 3D Voxel Minecraft-Style Game
+// ============================================================
+const $ = id => document.getElementById(id);
+const canvas = $('gameCanvas');
+
+// ---- WebGL Setup ----
+let gl = canvas.getContext('webgl2');
+let useUint32 = false;
+if (gl) {
+  useUint32 = true; // WebGL2 supports Uint32 indices natively
+} else {
+  gl = canvas.getContext('webgl');
+  if (!gl) { document.body.innerHTML = '<h1 style="color:#fff;text-align:center;margin-top:40vh">浏览器不支持 WebGL</h1>'; throw 'no webgl'; }
+  // Try to enable Uint32 indices for WebGL1
+  const ext = gl.getExtension('OES_element_index_uint');
+  useUint32 = !!ext;
+}
+
+function resizeCanvas() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+  gl.viewport(0, 0, canvas.width, canvas.height);
+}
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
+
+// ---- Matrix Math ----
+function mat4() { return new Float32Array(16); }
+function perspective(m, fov, asp, near, far) {
+  const f = 1 / Math.tan(fov / 2), nf = 1 / (near - far);
+  m.fill(0); m[0] = f / asp; m[5] = f; m[10] = (far + near) * nf; m[11] = -1; m[14] = 2 * far * near * nf;
+  return m;
+}
+function lookAt(m, eye, center, up) {
+  let fx = center[0] - eye[0], fy = center[1] - eye[1], fz = center[2] - eye[2];
+  let fl = Math.sqrt(fx * fx + fy * fy + fz * fz); fx /= fl; fy /= fl; fz /= fl;
+  let sx = fy * up[2] - fz * up[1], sy = fz * up[0] - fx * up[2], sz = fx * up[1] - fy * up[0];
+  let sl = Math.sqrt(sx * sx + sy * sy + sz * sz); sx /= sl; sy /= sl; sz /= sl;
+  let ux = sy * fz - sz * fy, uy = sz * fx - sx * fz, uz = sx * fy - sy * fx;
+  m[0] = sx; m[1] = ux; m[2] = -fx; m[3] = 0;
+  m[4] = sy; m[5] = uy; m[6] = -fy; m[7] = 0;
+  m[8] = sz; m[9] = uz; m[10] = -fz; m[11] = 0;
+  m[12] = -(sx * eye[0] + sy * eye[1] + sz * eye[2]);
+  m[13] = -(ux * eye[0] + uy * eye[1] + uz * eye[2]);
+  m[14] = (fx * eye[0] + fy * eye[1] + fz * eye[2]);
+  m[15] = 1;
+  return m;
+}
+
+// ---- Shaders ----
+const VS_SRC = `
+attribute vec3 aPos;
+attribute vec3 aNormal;
+attribute vec3 aColor;
+uniform mat4 uProj;
+uniform mat4 uView;
+uniform vec3 uCamPos;
+varying vec3 vColor;
+varying vec3 vNormal;
+varying float vDist;
+void main(){
+  gl_Position = uProj * uView * vec4(aPos, 1.0);
+  vColor = aColor;
+  vNormal = aNormal;
+  vDist = length(aPos - uCamPos);
+}`;
+const FS_SRC = `
+precision mediump float;
+varying vec3 vColor;
+varying vec3 vNormal;
+varying float vDist;
+uniform vec3 uSunDir;
+uniform float uAmbient;
+uniform vec3 uFogColor;
+uniform float uFogNear;
+uniform float uFogFar;
+void main(){
+  vec3 n = normalize(vNormal);
+  // Minecraft-style: flat face shading with fixed brightness per direction
+  float light;
+  float sx = abs(n.x), sy = abs(n.y), sz = abs(n.z);
+  if(sy > 0.5) {
+    // Top face: brightest
+    light = 1.0;
+  } else if(n.y < -0.5) {
+    // Bottom face: darkest
+    light = 0.5;
+  } else {
+    // Side faces: slightly different based on direction
+    if(sx > 0.5) {
+      // X-facing sides (east/west)
+      light = 0.7;
+    } else {
+      // Z-facing sides (north/south)
+      light = 0.8;
+    }
+  }
+  // Add subtle sun influence for depth
+  float sunDot = dot(n, normalize(uSunDir));
+  light += max(sunDot, 0.0) * 0.15;
+  light = clamp(light, 0.0, 1.0);
+  vec3 col = vColor * light;
+  float fog = clamp((vDist - uFogNear) / (uFogFar - uFogNear), 0.0, 1.0);
+  col = mix(col, uFogColor, fog);
+  gl_FragColor = vec4(col, 1.0);
+}`;
+
+function createShader(type, src) {
+  const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) { console.error('Shader:', gl.getShaderInfoLog(s)); return null; }
+  return s;
+}
+function createProgram(vs, fs) {
+  const p = gl.createProgram(); gl.attachShader(p, vs); gl.attachShader(p, fs); gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) { console.error('Program:', gl.getProgramInfoLog(p)); return null; }
+  return p;
+}
+const prog = createProgram(createShader(gl.VERTEX_SHADER, VS_SRC), createShader(gl.FRAGMENT_SHADER, FS_SRC));
+gl.useProgram(prog);
+
+const aPos = gl.getAttribLocation(prog, 'aPos');
+const aNormal = gl.getAttribLocation(prog, 'aNormal');
+const aColor = gl.getAttribLocation(prog, 'aColor');
+const uProj = gl.getUniformLocation(prog, 'uProj');
+const uView = gl.getUniformLocation(prog, 'uView');
+const uCamPos = gl.getUniformLocation(prog, 'uCamPos');
+const uSunDir = gl.getUniformLocation(prog, 'uSunDir');
+const uAmbient = gl.getUniformLocation(prog, 'uAmbient');
+const uFogColor = gl.getUniformLocation(prog, 'uFogColor');
+const uFogNear = gl.getUniformLocation(prog, 'uFogNear');
+const uFogFar = gl.getUniformLocation(prog, 'uFogFar');
+
+gl.enable(gl.DEPTH_TEST);
+gl.enable(gl.CULL_FACE);
+gl.cullFace(gl.BACK);
+
+// ---- Block Definitions ----
+const B = {
+  AIR: 0, GRASS: 1, DIRT: 2, STONE: 3, WOOD: 4, LEAVES: 5, SAND: 6, WATER: 7, BEDROCK: 8,
+  COAL: 9, IRON: 10, GOLD: 11, DIAMOND: 12, PLANKS: 13, GLASS: 14, COBBLE: 15, SNOW: 16,
+  CLAY: 17, BOOKSHELF: 18, BRICK: 19, WOOL: 20, CACTUS: 21, CRAFT: 22, FURNACE: 23, TORCH: 24
+};
+// Each block: side color, top color (if different), bottom color (if different)
+const BINFO = {};
+function defBlock(id, name, r, g, b, opts) {
+  opts = opts || {};
+  BINFO[id] = {
+    name, r, g, b,
+    tr: opts.topR !== undefined ? opts.topR : r,
+    tg: opts.topG !== undefined ? opts.topG : g,
+    tb: opts.topB !== undefined ? opts.topB : b,
+    br: opts.botR !== undefined ? opts.botR : r,
+    bg: opts.botG !== undefined ? opts.botG : g,
+    bb: opts.botB !== undefined ? opts.botB : b,
+    solid: opts.solid !== false,
+    trans: !!opts.trans
+  };
+}
+defBlock(B.AIR, '空气', 0, 0, 0, { solid: false, trans: true });
+defBlock(B.GRASS, '草方块', 0.48, 0.34, 0.15, { topR: 0.33, topG: 0.70, topB: 0.20, botR: 0.55, botG: 0.40, botB: 0.15 });
+defBlock(B.DIRT, '泥土', 0.55, 0.40, 0.15);
+defBlock(B.STONE, '石头', 0.58, 0.58, 0.58);
+defBlock(B.WOOD, '木头', 0.45, 0.30, 0.12, { topR: 0.55, topG: 0.40, topB: 0.22, botR: 0.55, botG: 0.40, botB: 0.22 });
+defBlock(B.LEAVES, '树叶', 0.12, 0.52, 0.08, { solid: false, trans: true });
+defBlock(B.SAND, '沙子', 0.90, 0.82, 0.55);
+defBlock(B.WATER, '水', 0.15, 0.35, 0.85, { solid: false, trans: true });
+defBlock(B.BEDROCK, '基岩', 0.20, 0.20, 0.20);
+defBlock(B.COAL, '煤矿石', 0.32, 0.32, 0.32);
+defBlock(B.IRON, '铁矿石', 0.70, 0.65, 0.58);
+defBlock(B.GOLD, '金矿石', 0.90, 0.75, 0.22);
+defBlock(B.DIAMOND, '钻石矿', 0.25, 0.88, 0.88);
+defBlock(B.PLANKS, '木板', 0.75, 0.60, 0.38);
+defBlock(B.GLASS, '玻璃', 0.78, 0.85, 0.92, { trans: true });
+defBlock(B.COBBLE, '圆石', 0.45, 0.45, 0.45);
+defBlock(B.SNOW, '雪', 0.95, 0.97, 0.98);
+defBlock(B.CLAY, '黏土', 0.68, 0.55, 0.48);
+defBlock(B.BOOKSHELF, '书架', 0.54, 0.41, 0.08);
+defBlock(B.BRICK, '砖块', 0.61, 0.29, 0.23);
+defBlock(B.WOOL, '羊毛', 0.91, 0.91, 0.91);
+defBlock(B.CACTUS, '仙人掌', 0.16, 0.54, 0.16);
+defBlock(B.CRAFT, '工作台', 0.6, 0.42, 0.23);
+defBlock(B.FURNACE, '熔炉', 0.4, 0.4, 0.4);
+defBlock(B.TORCH, '火把', 1.0, 0.8, 0.27, { solid: false, trans: true });
+
+function blockRGB(id, faceType, wx, wy, wz) {
+  const bi = BINFO[id]; if (!bi) return [0.5, 0.5, 0.5];
+  let r, g, b;
+  if (faceType === 1) { r = bi.tr; g = bi.tg; b = bi.tb; }
+  else if (faceType === 0) { r = bi.br; g = bi.bg; b = bi.bb; }
+  else { r = bi.r; g = bi.g; b = bi.b; }
+  // Per-block noise for texture variation
+  const noise = (hash3(wx, wy, wz) - 0.5) * 0.08;
+  r = Math.max(0, Math.min(1, r + noise));
+  g = Math.max(0, Math.min(1, g + noise));
+  b = Math.max(0, Math.min(1, b + noise));
+  return [r, g, b];
+}
+
+// ---- Noise ----
+let SEED = (Math.random() * 1e9) | 0;
+function hash3(x, y, z) {
+  let n = (x * 374761393 + y * 668265263 + z * 1274126177 + SEED * 144665) | 0;
+  n = Math.imul(n ^ (n >>> 13), 1274126177); n ^= n >>> 16; return (n >>> 0) / 4294967296;
+}
+function lerp(a, b, t) { return a + (b - a) * t; }
+function fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
+function pnoise2(x, y) {
+  const ix = Math.floor(x), iy = Math.floor(y);
+  const fx = fade(x - ix), fy = fade(y - iy);
+  return lerp(lerp(hash3(ix, iy, 0), hash3(ix + 1, iy, 0), fx), lerp(hash3(ix, iy + 1, 0), hash3(ix + 1, iy + 1, 0), fx), fy);
+}
+function fbm(x, y, oct) {
+  oct = oct || 6; let v = 0, a = 1, f = 1, t = 0;
+  for (let i = 0; i < oct; i++) { v += a * pnoise2(x * f, y * f); t += a; a *= 0.5; f *= 2; }
+  return v / t;
+}
+
+// ---- World ----
+const CS = 16, WH = 128, SEA = 32, RD = 6;
+const chunks = new Map();
+function ck(cx, cz) { return cx + ',' + cz; }
+function gChunk(cx, cz) { const k = ck(cx, cz); if (!chunks.has(k)) chunks.set(k, genChunk(cx, cz)); return chunks.get(k); }
+function gBlock(x, y, z) {
+  if (y < 0 || y >= WH) return 0;
+  const cx = Math.floor(x / CS), cz = Math.floor(z / CS);
+  const c = gChunk(cx, cz);
+  return c[((x % CS) + CS) % CS][y][((z % CS) + CS) % CS];
+}
+function sBlock(x, y, z, id) {
+  if (y < 0 || y >= WH) return;
+  const cx = Math.floor(x / CS), cz = Math.floor(z / CS);
+  const c = gChunk(cx, cz);
+  c[((x % CS) + CS) % CS][y][((z % CS) + CS) % CS] = id;
+}
+
+function genChunk(cx, cz) {
+  const d = new Array(CS);
+  for (let x = 0; x < CS; x++) { d[x] = new Array(WH); for (let y = 0; y < WH; y++) d[x][y] = new Uint8Array(CS); }
+  const ox = cx * CS, oz = cz * CS;
+  for (let lx = 0; lx < CS; lx++) {
+    for (let lz = 0; lz < CS; lz++) {
+      const wx = ox + lx, wz = oz + lz;
+      const h = Math.floor(fbm(wx * 0.01, wz * 0.01, 5) * 30 + fbm(wx * 0.03, wz * 0.03, 3) * 10 + 40);
+      const biome = fbm(wx * 0.005, wz * 0.005, 3);
+      for (let y = 0; y < WH; y++) {
+        let bl = 0;
+        if (y === 0) bl = B.BEDROCK;
+        else if (y < h - 4) {
+          bl = B.STONE;
+          const ore = hash3(wx, y, wz);
+          if (y < 20 && ore < 0.02) bl = B.DIAMOND;
+          else if (y < 40 && ore < 0.04) bl = B.GOLD;
+          else if (y < 50 && ore < 0.06) bl = B.IRON;
+          else if (ore < 0.08) bl = B.COAL;
+          const cave = fbm(wx * 0.05 + y * 0.1, wz * 0.05 + y * 0.1, 3);
+          if (cave > 0.55 && y > 2 && y < h - 2) bl = B.AIR;
+        } else if (y < h) {
+          bl = biome < 0.35 ? B.SAND : B.DIRT;
+        } else if (y === h) {
+          if (h <= SEA + 1) bl = B.SAND;
+          else if (biome > 0.6 && h > 55) bl = B.SNOW;
+          else if (biome < 0.35) bl = B.SAND;
+          else bl = B.GRASS;
+        } else if (y <= SEA && y > h) {
+          bl = B.WATER;
+        }
+        d[lx][y][lz] = bl;
+      }
+      // Trees
+      if (h > SEA + 2 && biome > 0.35 && biome < 0.65 && hash3(wx * 13, 0, wz * 17) < 0.02) {
+        const tH = 4 + Math.floor(hash3(wx, 7, wz) * 3);
+        for (let ty = h + 1; ty <= h + tH && ty < WH; ty++) d[lx][ty][lz] = B.WOOD;
+        for (let dy = -2; dy <= 1; dy++) {
+          const r = dy <= 0 ? 2 : 1;
+          for (let dx = -r; dx <= r; dx++) for (let dz = -r; dz <= r; dz++) {
+            if (dx === 0 && dz === 0 && dy < 1) continue;
+            if (Math.abs(dx) === r && Math.abs(dz) === r && dy === -2) continue;
+            const nlx = lx + dx, nlz = lz + dz, nly = h + tH + dy;
+            if (nlx >= 0 && nlx < CS && nlz >= 0 && nlz < CS && nly >= 0 && nly < WH && d[nlx][nly][nlz] === 0)
+              d[nlx][nly][nlz] = B.LEAVES;
+          }
+        }
+      }
+      // Cactus
+      if (biome < 0.35 && h > SEA + 1 && hash3(wx * 7, 3, wz * 11) < 0.01) {
+        const cH = 2 + Math.floor(hash3(wx, 5, wz) * 3);
+        for (let cy = h + 1; cy <= h + cH && cy < WH; cy++) d[lx][cy][lz] = B.CACTUS;
+      }
+    }
+  }
+  return d;
+}
+
+// ---- Chunk Mesh ----
+const chunkBufs = new Map();
+const FACES = [
+  { d: [1, 0, 0], c: [[1, 0, 0], [1, 1, 0], [1, 1, 1], [1, 0, 1]], f: 2 },   // +X side
+  { d: [-1, 0, 0], c: [[0, 0, 1], [0, 1, 1], [0, 1, 0], [0, 0, 0]], f: 2 },   // -X side
+  { d: [0, 1, 0], c: [[0, 1, 1], [1, 1, 1], [1, 1, 0], [0, 1, 0]], f: 1 },    // +Y top
+  { d: [0, -1, 0], c: [[0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1]], f: 0 },   // -Y bottom
+  { d: [0, 0, 1], c: [[1, 0, 1], [1, 1, 1], [0, 1, 1], [0, 0, 1]], f: 2 },    // +Z side
+  { d: [0, 0, -1], c: [[0, 0, 0], [0, 1, 0], [1, 1, 0], [1, 0, 0]], f: 2 },   // -Z side
+];
+
+function buildChunkMesh(cx, cz) {
+  const key = ck(cx, cz);
+  if (chunkBufs.has(key)) {
+    const old = chunkBufs.get(key);
+    if (old) { gl.deleteBuffer(old.vb); gl.deleteBuffer(old.ib); }
+    chunkBufs.delete(key);
+  }
+  const posArr = [], normArr = [], colArr = [], idxArr = [];
+  let vc = 0;
+  const ox = cx * CS, oz = cz * CS;
+
+  for (let lx = 0; lx < CS; lx++) for (let y = 0; y < WH; y++) for (let lz = 0; lz < CS; lz++) {
+    const bid = gBlock(ox + lx, y, oz + lz);
+    if (bid === 0) continue;
+    const bi = BINFO[bid]; if (!bi) continue;
+
+    for (let fi = 0; fi < 6; fi++) {
+      const face = FACES[fi];
+      const nb = gBlock(ox + lx + face.d[0], y + face.d[1], oz + lz + face.d[2]);
+      const nbi = BINFO[nb];
+      const show = nb === 0 || (nbi && nbi.trans && nb !== bid);
+      if (!show) continue;
+
+      const col = blockRGB(bid, face.f, ox + lx, y, oz + lz);
+      const base = vc;
+      for (const c of face.c) {
+        posArr.push(ox + lx + c[0], y + c[1], oz + lz + c[2]);
+        normArr.push(face.d[0], face.d[1], face.d[2]);
+        colArr.push(col[0], col[1], col[2]);
+      }
+      idxArr.push(base, base + 1, base + 2, base, base + 2, base + 3);
+      vc += 4;
+    }
+  }
+
+  if (vc === 0) { chunkBufs.set(key, null); return; }
+
+  // Build interleaved buffer: pos(3) + normal(3) + color(3) = 9 floats = 36 bytes
+  const data = new Float32Array(vc * 9);
+  for (let i = 0; i < vc; i++) {
+    data[i * 9 + 0] = posArr[i * 3 + 0];
+    data[i * 9 + 1] = posArr[i * 3 + 1];
+    data[i * 9 + 2] = posArr[i * 3 + 2];
+    data[i * 9 + 3] = normArr[i * 3 + 0];
+    data[i * 9 + 4] = normArr[i * 3 + 1];
+    data[i * 9 + 5] = normArr[i * 3 + 2];
+    data[i * 9 + 6] = colArr[i * 3 + 0];
+    data[i * 9 + 7] = colArr[i * 3 + 1];
+    data[i * 9 + 8] = colArr[i * 3 + 2];
+  }
+
+  const vb = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, vb);
+  gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+
+  const ib = gl.createBuffer();
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib);
+  if (useUint32) {
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint32Array(idxArr), gl.STATIC_DRAW);
+  } else {
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(idxArr), gl.STATIC_DRAW);
+  }
+
+  chunkBufs.set(key, { vb, ib, count: idxArr.length });
+}
+
+// ---- Player ----
+const P = { x: 8, y: 80, z: 8, vx: 0, vy: 0, vz: 0, yaw: 0, pitch: 0, onGround: false, h: 1.62, w: 0.3, speed: 5.5, js: 8.5, hp: 20, maxHp: 20, fly: false };
+
+function findSpawnY(x, z) {
+  for (let y = WH - 1; y >= 0; y--) {
+    const id = gBlock(x, y, z);
+    if (id && BINFO[id] && BINFO[id].solid) return y + 2;
+  }
+  return 80;
+}
+
+// ---- Inventory ----
+const HS = 9, IS = 36;
+const inv = new Array(IS).fill(null);
+let selSlot = 0, invOpen = false;
+inv[0] = { id: B.CRAFT, n: 1 };
+inv[1] = { id: B.TORCH, n: 16 };
+inv[2] = { id: B.PLANKS, n: 32 };
+
+const RECIPES = [
+  { name: '木板x4', out: { id: B.PLANKS, n: 4 }, need: [{ id: B.WOOD, n: 1 }] },
+  { name: '工作台', out: { id: B.CRAFT, n: 1 }, need: [{ id: B.PLANKS, n: 4 }] },
+  { name: '火把x4', out: { id: B.TORCH, n: 4 }, need: [{ id: B.WOOD, n: 1 }, { id: B.COAL, n: 1 }] },
+  { name: '圆石x4', out: { id: B.COBBLE, n: 4 }, need: [{ id: B.STONE, n: 1 }] },
+  { name: '玻璃x4', out: { id: B.GLASS, n: 4 }, need: [{ id: B.SAND, n: 4 }] },
+  { name: '砖块x4', out: { id: B.BRICK, n: 4 }, need: [{ id: B.CLAY, n: 4 }] },
+  { name: '书架', out: { id: B.BOOKSHELF, n: 1 }, need: [{ id: B.PLANKS, n: 6 }, { id: B.COAL, n: 1 }] },
+  { name: '熔炉', out: { id: B.FURNACE, n: 1 }, need: [{ id: B.COBBLE, n: 8 }] },
+];
+
+function hasNeed(r) {
+  for (const n of r.need) {
+    let f = 0;
+    for (const s of inv) if (s && s.id === n.id) f += s.n;
+    if (f < n.n) return false;
+  }
+  return true;
+}
+function craft(r) {
+  if (!hasNeed(r)) return;
+  for (const n of r.need) {
+    let rem = n.n;
+    for (let i = 0; i < IS && rem > 0; i++)
+      if (inv[i] && inv[i].id === n.id) { const t = Math.min(inv[i].n, rem); inv[i].n -= t; rem -= t; if (inv[i].n <= 0) inv[i] = null; }
+  }
+  addInv(r.out.id, r.out.n); showNotif('合成: ' + r.name); updateHotbar(); if (invOpen) updateInv();
+}
+function addInv(id, n) {
+  for (let i = 0; i < IS; i++) if (inv[i] && inv[i].id === id && inv[i].n < 64) { const a = Math.min(n, 64 - inv[i].n); inv[i].n += a; n -= a; if (n <= 0) return; }
+  for (let i = 0; i < IS; i++) if (!inv[i]) { const a = Math.min(n, 64); inv[i] = { id, n: a }; n -= a; if (n <= 0) return; }
+}
+function remInv(id, n) { for (let i = IS - 1; i >= 0; i--) if (inv[i] && inv[i].id === id) { const t = Math.min(inv[i].n, n); inv[i].n -= t; n -= t; if (inv[i].n <= 0) inv[i] = null; if (n <= 0) return; } }
+function selBlock() { const s = inv[selSlot]; return s ? s.id : 0; }
+
+// ---- Physics (fixed collision) ----
+function isSolid(x, y, z) { const id = gBlock(x, y, z); return id !== 0 && BINFO[id] && BINFO[id].solid; }
+
+// Check if a box overlaps any solid block
+function boxSolid(x0, y0, z0, x1, y1, z1) {
+  for (let x = Math.floor(x0); x <= Math.floor(x1); x++)
+    for (let y = Math.floor(y0); y <= Math.floor(y1); y++)
+      for (let z = Math.floor(z0); z <= Math.floor(z1); z++)
+        if (isSolid(x, y, z)) return true;
+  return false;
+}
+
+function collide(px, py, pz, vx, vy, vz, dt) {
+  let x = px, y = py, z = pz;
+  const hw = P.w, h = P.h;
+
+  // X axis
+  x += vx * dt;
+  if (boxSolid(x - hw, y, z - hw, x + hw, y + h - 0.01, z + hw)) {
+    if (vx > 0) x = Math.floor(x + hw) - hw - 0.001;
+    else if (vx < 0) x = Math.floor(x - hw) + 1 + hw + 0.001;
+    else x = px;
+    vx = 0;
+  }
+
+  // Z axis
+  z += vz * dt;
+  if (boxSolid(x - hw, y, z - hw, x + hw, y + h - 0.01, z + hw)) {
+    if (vz > 0) z = Math.floor(z + hw) - hw - 0.001;
+    else if (vz < 0) z = Math.floor(z - hw) + 1 + hw + 0.001;
+    else z = pz;
+    vz = 0;
+  }
+
+  // Y axis
+  y += vy * dt;
+  P.onGround = false;
+  if (vy <= 0) {
+    // Falling: check below
+    if (boxSolid(x - hw, y, z - hw, x + hw, y, z + hw)) {
+      y = Math.floor(y) + 1;
+      vy = 0; P.onGround = true;
+    }
+  } else {
+    // Rising: check above
+    if (boxSolid(x - hw, y + h, z - hw, x + hw, y + h, z + hw)) {
+      y = Math.floor(y + h) - h;
+      vy = 0;
+    }
+  }
+
+  return { x, y, z, vx, vy, vz };
+}
+
+// ---- Input ----
+const keys = {};
+let mdx = 0, mdy = 0, locked = false, gameStarted = false;
+
+document.addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if (e.code === 'Tab') { e.preventDefault(); if (locked) document.exitPointerLock(); }
+  if (e.code === 'KeyE') {
+    invOpen = !invOpen;
+    $('inventory').style.display = invOpen ? 'block' : 'none';
+    if (invOpen) { updateInv(); if (locked) document.exitPointerLock(); }
+  }
+  if (e.code >= 'Digit1' && e.code <= 'Digit9') { selSlot = parseInt(e.code[5]) - 1; updateHotbar(); }
+  if (e.code === 'KeyQ') { const s = inv[selSlot]; if (s) { s.n--; if (s.n <= 0) inv[selSlot] = null; updateHotbar(); } }
+  if (e.code === 'KeyF') { P.fly = !P.fly; P.vy = 0; showNotif(P.fly ? '飞行模式 开' : '飞行模式 关'); }
+  if (e.code === 'KeyP') { e.preventDefault(); toggleAdmin(); }
+  if (e.ctrlKey && e.code === 'KeyS') { e.preventDefault(); saveToSlot(1); }
+  if (e.ctrlKey && e.code === 'KeyL') { e.preventDefault(); loadFromSlot(1); }
+});
+document.addEventListener('keyup', e => { keys[e.code] = false; });
+document.addEventListener('mousemove', e => { if (locked) { mdx += e.movementX; mdy += e.movementY; } });
+
+$('playBtn').addEventListener('click', () => { canvas.requestPointerLock(); });
+document.addEventListener('pointerlockchange', () => {
+  locked = !!document.pointerLockElement;
+  if (locked) {
+    $('blocker').style.display = 'none';
+    $('crosshair').style.display = 'block';
+    $('hud').style.display = 'block';
+    $('healthbar').style.display = 'flex';
+    $('hotbar').style.display = 'flex';
+    $('inventory').style.display = 'none';
+    $('admin-panel').style.display = 'none';
+    invOpen = false;
+    adOpen = false;
+    gameStarted = true;
+  } else {
+    if (!invOpen && !adOpen) $('blocker').style.display = 'flex';
+    $('crosshair').style.display = 'none';
+    $('hud').style.display = 'none';
+    $('healthbar').style.display = 'none';
+    $('hotbar').style.display = 'none';
+    if (gameStarted) $('playBtn').textContent = '🎮 继续游戏';
+  }
+});
+
+// ---- View direction helper (matches camera exactly) ----
+function viewDir() {
+  const cy = Math.cos(P.yaw), sy = Math.sin(P.yaw), cp = Math.cos(P.pitch), sp = Math.sin(P.pitch);
+  return { x: -sy * cp, y: sp, z: -cy * cp };
+}
+
+// ---- DDA Voxel Raycast ----
+function raycastBlocks(ox, oy, oz, dx, dy, dz, maxD) {
+  let x = Math.floor(ox), y = Math.floor(oy), z = Math.floor(oz);
+  const stepX = dx > 0 ? 1 : -1, stepY = dy > 0 ? 1 : -1, stepZ = dz > 0 ? 1 : -1;
+  let tMaxX = dx !== 0 ? ((dx > 0 ? (x + 1 - ox) : (ox - x)) / Math.abs(dx)) : 1e18;
+  let tMaxY = dy !== 0 ? ((dy > 0 ? (y + 1 - oy) : (oy - y)) / Math.abs(dy)) : 1e18;
+  let tMaxZ = dz !== 0 ? ((dz > 0 ? (z + 1 - oz) : (oz - z)) / Math.abs(dz)) : 1e18;
+  const tDeltaX = dx !== 0 ? Math.abs(1 / dx) : 1e18;
+  const tDeltaY = dy !== 0 ? Math.abs(1 / dy) : 1e18;
+  const tDeltaZ = dz !== 0 ? Math.abs(1 / dz) : 1e18;
+  let prevX = x, prevY = y, prevZ = z;
+  for (let i = 0; i < maxD * 3 + 1; i++) {
+    const id = gBlock(x, y, z);
+    if (id !== 0 && BINFO[id]) {
+      return { bx: x, by: y, bz: z, px: prevX, py: prevY, pz: prevZ };
+    }
+    prevX = x; prevY = y; prevZ = z;
+    if (tMaxX < tMaxY) {
+      if (tMaxX < tMaxZ) { if (tMaxX > maxD) break; x += stepX; tMaxX += tDeltaX; }
+      else { if (tMaxZ > maxD) break; z += stepZ; tMaxZ += tDeltaZ; }
+    } else {
+      if (tMaxY < tMaxZ) { if (tMaxY > maxD) break; y += stepY; tMaxY += tDeltaY; }
+      else { if (tMaxZ > maxD) break; z += stepZ; tMaxZ += tDeltaZ; }
+    }
+  }
+  return null;
+}
+
+function breakBlock() {
+  const d = viewDir();
+  const hit = raycastBlocks(P.x, P.y + P.h - 0.1, P.z, d.x, d.y, d.z, 6);
+  if (!hit) return;
+  const id = gBlock(hit.bx, hit.by, hit.bz);
+  if (id === 0 || id === B.BEDROCK) return;
+  addInv(id, 1); sBlock(hit.bx, hit.by, hit.bz, 0); rebuildNear(hit.bx, hit.bz); updateHotbar();
+}
+
+function placeBlock() {
+  const d = viewDir();
+  const hit = raycastBlocks(P.x, P.y + P.h - 0.1, P.z, d.x, d.y, d.z, 6);
+  if (!hit) return;
+  const bid = selBlock(); if (!bid) return;
+  if (gBlock(hit.px, hit.py, hit.pz) !== 0) return;
+  const pw = P.w;
+  if (hit.px >= Math.floor(P.x - pw) && hit.px <= Math.floor(P.x + pw) &&
+    hit.pz >= Math.floor(P.z - pw) && hit.pz <= Math.floor(P.z + pw) &&
+    hit.py >= Math.floor(P.y) && hit.py <= Math.floor(P.y + P.h)) return;
+  sBlock(hit.px, hit.py, hit.pz, bid); remInv(bid, 1); rebuildNear(hit.px, hit.pz); updateHotbar();
+}
+
+function rebuildNear(wx, wz) {
+  const cx = Math.floor(wx / CS), cz = Math.floor(wz / CS);
+  const set = new Set();
+  for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) set.add(ck(cx + dx, cz + dz));
+  set.forEach(k => { const p = k.split(',').map(Number); buildChunkMesh(p[0], p[1]); });
+}
+
+document.addEventListener('mousedown', e => {
+  if (!locked || invOpen) return;
+  if (e.button === 0) breakBlock();
+  if (e.button === 2) placeBlock();
+});
+document.addEventListener('contextmenu', e => e.preventDefault());
+document.addEventListener('touchstart', e => e.preventDefault(), { passive: false });
+document.addEventListener('gesturestart', e => e.preventDefault());
+document.addEventListener('gesturechange', e => e.preventDefault());
+document.addEventListener('wheel', e => {
+  if (!locked) return;
+  if (e.deltaY > 0) selSlot = (selSlot + 1) % HS; else selSlot = (selSlot + HS - 1) % HS;
+  updateHotbar();
+});
+
+// ---- UI ----
+function mkIcon(id, sz) {
+  sz = sz || 36; const c = document.createElement('canvas'); c.width = sz; c.height = sz;
+  const x = c.getContext('2d'), bi = BINFO[id]; if (!bi) return c;
+  const cl = `rgb(${(bi.r * 255) | 0},${(bi.g * 255) | 0},${(bi.b * 255) | 0})`;
+  x.fillStyle = cl; x.fillRect(4, 4, sz - 8, sz - 8);
+  x.fillStyle = 'rgba(255,255,255,0.25)'; x.fillRect(4, 4, sz - 8, (sz - 8) / 3);
+  x.fillStyle = 'rgba(0,0,0,0.2)'; x.fillRect(4, sz / 2 + 2, sz - 8, sz / 2 - 6);
+  return c;
+}
+function updateHotbar() {
+  const bar = $('hotbar'); bar.innerHTML = '';
+  for (let i = 0; i < HS; i++) {
+    const d = document.createElement('div'); d.className = 'slot' + (i === selSlot ? ' active' : '');
+    const k = document.createElement('span'); k.className = 'key'; k.textContent = i + 1; d.appendChild(k);
+    if (inv[i]) { d.appendChild(mkIcon(inv[i].id)); if (inv[i].n > 1) { const cn = document.createElement('span'); cn.className = 'count'; cn.textContent = inv[i].n; d.appendChild(cn); } }
+    const idx = i; d.addEventListener('click', () => { selSlot = idx; updateHotbar(); });
+    bar.appendChild(d);
+  }
+  const hb = $('healthbar'); hb.innerHTML = '';
+  for (let i = 0; i < P.maxHp / 2; i++) { const s = document.createElement('span'); s.className = 'heart ' + (i < Math.ceil(P.hp / 2) ? 'on' : 'off'); s.textContent = '❤'; hb.appendChild(s); }
+  const s = inv[selSlot]; $('block-info').textContent = '方块: ' + (s ? BINFO[s.id].name : '空');
+}
+function updateInv() {
+  const g = $('inv-grid'); g.innerHTML = '';
+  for (let i = 0; i < IS; i++) {
+    const d = document.createElement('div'); d.className = 'slot' + (i === selSlot ? ' active' : '');
+    if (inv[i]) { d.appendChild(mkIcon(inv[i].id)); if (inv[i].n > 1) { const cn = document.createElement('span'); cn.className = 'count'; cn.textContent = inv[i].n; d.appendChild(cn); } }
+    const idx = i; d.addEventListener('click', () => { selSlot = idx % HS; updateHotbar(); updateInv(); });
+    g.appendChild(d);
+  }
+  const rl = $('recipe-list'); rl.innerHTML = '';
+  RECIPES.forEach(r => {
+    const b = document.createElement('button'); b.className = 'recipe-btn' + (hasNeed(r) ? '' : ' disabled');
+    b.textContent = r.name; b.addEventListener('click', () => { if (hasNeed(r)) craft(r); }); rl.appendChild(b);
+  });
+}
+function showNotif(t) {
+  const e = $('notification'); e.textContent = t; e.style.display = 'block'; e.style.opacity = '1';
+  setTimeout(() => { e.style.opacity = '0'; setTimeout(() => { e.style.display = 'none'; }, 300); }, 2000);
+}
+
+// ---- Day/Night ----
+let dayT = 0.3; const DAY_SP = 0.008;
+function updateSky(dt) {
+  if (!adFreezeTime) dayT = (dayT + dt * DAY_SP) % 1;
+  const a = dayT * Math.PI * 2, sy = Math.sin(a), sx = Math.cos(a) * 0.5;
+  const br = Math.max(0, Math.min(1, (sy + 0.2) / 0.7));
+  return { sunDir: [sx, Math.max(sy, 0.1), 0.5], ambient: 0.2 + br * 0.5, fogColor: [0.15 + br * 0.38, 0.35 + br * 0.56, 0.75 + br * 0.2] };
+}
+
+// ---- Chunk Management ----
+let cBuildQ = [];
+function updateChunks() {
+  const pcx = Math.floor(P.x / CS), pcz = Math.floor(P.z / CS);
+  for (let dx = -RD; dx <= RD; dx++) for (let dz = -RD; dz <= RD; dz++) {
+    if (dx * dx + dz * dz > RD * RD) continue;
+    const cx = pcx + dx, cz = pcz + dz, k = ck(cx, cz);
+    gChunk(cx, cz);
+    if (!chunkBufs.has(k)) cBuildQ.push({ cx, cz, d: dx * dx + dz * dz });
+  }
+  cBuildQ.sort((a, b) => a.d - b.d);
+  let built = 0;
+  while (cBuildQ.length > 0 && built < 3) { const { cx, cz } = cBuildQ.shift(); buildChunkMesh(cx, cz); built; built++; }
+  chunkBufs.forEach((m, k) => {
+    const p = k.split(',').map(Number);
+    if ((p[0] - pcx) * (p[0] - pcx) + (p[1] - pcz) * (p[1] - pcz) > (RD + 2) * (RD + 2)) {
+      if (m) { gl.deleteBuffer(m.vb); gl.deleteBuffer(m.ib); } chunkBufs.delete(k);
+    }
+  });
+}
+
+// ---- Render ----
+const projMat = mat4(), viewMat = mat4();
+
+function renderChunks(camX, camY, camZ, sky) {
+  gl.clearColor(sky.fogColor[0], sky.fogColor[1], sky.fogColor[2], 1);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  gl.useProgram(prog);
+  perspective(projMat, 75 * Math.PI / 180, canvas.width / canvas.height, 0.1, 500);
+  gl.uniformMatrix4fv(uProj, false, projMat);
+
+  const d = viewDir();
+  lookAt(viewMat, [camX, camY, camZ], [camX + d.x, camY + d.y, camZ + d.z], [0, 1, 0]);
+  gl.uniformMatrix4fv(uView, false, viewMat);
+  gl.uniform3f(uCamPos, camX, camY, camZ);
+
+  gl.uniform3f(uSunDir, sky.sunDir[0], sky.sunDir[1], sky.sunDir[2]);
+  gl.uniform1f(uAmbient, sky.ambient);
+  gl.uniform3f(uFogColor, sky.fogColor[0], sky.fogColor[1], sky.fogColor[2]);
+  gl.uniform1f(uFogNear, CS * RD * 0.6);
+  gl.uniform1f(uFogFar, CS * RD * 1.1);
+
+  const stride = 9 * 4;
+  chunkBufs.forEach(m => {
+    if (!m) return;
+    gl.bindBuffer(gl.ARRAY_BUFFER, m.vb);
+    gl.enableVertexAttribArray(aPos); gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, stride, 0);
+    gl.enableVertexAttribArray(aNormal); gl.vertexAttribPointer(aNormal, 3, gl.FLOAT, false, stride, 12);
+    gl.enableVertexAttribArray(aColor); gl.vertexAttribPointer(aColor, 3, gl.FLOAT, false, stride, 24);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, m.ib);
+    gl.drawElements(gl.TRIANGLES, m.count, useUint32 ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT, 0);
+  });
+}
+
+// ---- Game Loop ----
+let lastT = performance.now(), fc = 0, ft = 0, fps = 0;
+
+function loop(now) {
+  requestAnimationFrame(loop);
+  const dt = Math.min((now - lastT) / 1000, 0.05); lastT = now;
+  fc++; ft += dt; if (ft >= 1) { fps = Math.round(fc / ft); fc = 0; ft = 0; }
+
+  updateChunks();
+
+  if (locked) {
+    P.yaw -= mdx * 0.002; P.pitch -= mdy * 0.002;
+    P.pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, P.pitch));
+    mdx = 0; mdy = 0;
+
+    const fw = [-Math.sin(P.yaw), 0, -Math.cos(P.yaw)];
+    const rt = [Math.cos(P.yaw), 0, -Math.sin(P.yaw)];
+    let sp = P.speed; if (keys['ShiftLeft']) sp *= 0.5;
+    let mx = 0, mz = 0;
+    if (keys['KeyW']) { mx += fw[0]; mz += fw[2]; }
+    if (keys['KeyS']) { mx -= fw[0]; mz -= fw[2]; }
+    if (keys['KeyA']) { mx -= rt[0]; mz -= rt[2]; }
+    if (keys['KeyD']) { mx += rt[0]; mz += rt[2]; }
+    const l = Math.sqrt(mx * mx + mz * mz); if (l > 0) { mx /= l; mz /= l; }
+    P.vx = mx * sp; P.vz = mz * sp;
+
+    if (P.fly) { P.vy = 0; if (keys['Space']) P.vy = sp; if (keys['ShiftLeft']) P.vy = -sp; }
+    else { P.vy -= 22 * dt; if (P.vy < -40) P.vy = -40; if (keys['Space'] && P.onGround) P.vy = P.js; }
+
+    const r = collide(P.x, P.y, P.z, P.vx, P.vy, P.vz, dt);
+    P.x = r.x; P.y = r.y; P.z = r.z; P.vx = r.vx; P.vy = r.vy; P.vz = r.vz;
+
+    if (P.y < -10) {
+      if (adGod) { P.y = 100; P.vy = 0; }
+      else { P.y = findSpawnY(8, 8); P.x = 8; P.z = 8; P.vy = 0; }
+    }
+
+    $('fps').textContent = 'FPS: ' + fps;
+    $('coords').textContent = `XYZ: ${P.x.toFixed(1)} / ${P.y.toFixed(1)} / ${P.z.toFixed(1)}`;
+    if (adOpen) updateAdInfo();
+  }
+
+  const camX = P.x, camY = P.y + P.h - 0.1, camZ = P.z;
+  const sky = updateSky(dt);
+  renderChunks(camX, camY, camZ, sky);
+}
+
+// ---- Admin Panel ----
+let adOpen = false, adGod = false, adFreezeTime = false, adSelectedBlock = B.DIAMOND;
+
+function toggleAdmin() {
+  adOpen = !adOpen;
+  const panel = $('admin-panel');
+  panel.style.display = adOpen ? 'block' : 'none';
+  if (adOpen) {
+    if (locked) document.exitPointerLock();
+    updateAdInfo();
+    buildAdBlockGrid();
+    buildSaveGrid();
+  }
+}
+
+$('adClose').addEventListener('click', () => { adOpen = false; $('admin-panel').style.display = 'none'; });
+
+// Time controls
+$('adMorning').addEventListener('click', () => { dayT = 0.25; showNotif('⏰ 设置时间: 早晨'); updateAdInfo(); });
+$('adNoon').addEventListener('click', () => { dayT = 0.5; showNotif('⏰ 设置时间: 正午'); updateAdInfo(); });
+$('adDusk').addEventListener('click', () => { dayT = 0.75; showNotif('⏰ 设置时间: 黄昏'); updateAdInfo(); });
+$('adNight').addEventListener('click', () => { dayT = 0.0; showNotif('⏰ 设置时间: 夜晚'); updateAdInfo(); });
+$('adFreeze').addEventListener('click', () => { adFreezeTime = !adFreezeTime; showNotif(adFreezeTime ? '❄️ 时间已冻结' : '⏰ 时间已恢复'); $('adFreeze').classList.toggle('active', adFreezeTime); updateAdInfo(); });
+
+// Teleport
+$('adTeleport').addEventListener('click', () => {
+  const x = parseFloat($('adTx').value) || 0;
+  const y = parseFloat($('adTy').value) || 64;
+  const z = parseFloat($('adTz').value) || 0;
+  P.x = x; P.y = y; P.z = z; P.vy = 0;
+  showNotif(`📍 传送至 (${x}, ${y}, ${z})`);
+  updateAdInfo();
+});
+$('adTPHere').addEventListener('click', () => {
+  const d = viewDir();
+  const hit = raycastBlocks(P.x, P.y + P.h - 0.1, P.z, d.x, d.y, d.z, 50);
+  if (hit) {
+    P.x = hit.px + 0.5; P.y = hit.py + 1; P.z = hit.pz + 0.5; P.vy = 0;
+    showNotif(`📍 传送到准星方块 (${hit.px}, ${hit.py}, ${hit.pz})`);
+  } else {
+    showNotif('❌ 未找到目标方块');
+  }
+  updateAdInfo();
+});
+
+// Give items
+$('adGiveBtn').addEventListener('click', () => {
+  const count = parseInt($('adGiveCount').value) || 64;
+  addInv(adSelectedBlock, count);
+  showNotif(`🎁 获得 ${BINFO[adSelectedBlock].name} x${count}`);
+  updateHotbar();
+});
+
+// Player settings
+$('adGodMode').addEventListener('click', () => {
+  adGod = !adGod;
+  if (adGod) P.hp = P.maxHp;
+  $('adGodMode').classList.toggle('active', adGod);
+  showNotif(adGod ? '💀 无敌模式 开' : '💀 无敌模式 关');
+  updateAdInfo();
+});
+$('adHeal').addEventListener('click', () => { P.hp = P.maxHp; showNotif('💚 已满血'); updateHotbar(); updateAdInfo(); });
+$('adFly').addEventListener('click', () => { P.fly = !P.fly; P.vy = 0; showNotif(P.fly ? '🦅 飞行模式 开' : '🦅 飞行模式 关'); updateAdInfo(); });
+$('adSuicide').addEventListener('click', () => { P.hp = 0; P.vy = 0; P.y = findSpawnY(Math.floor(P.x), Math.floor(P.z)) + 2; showNotif('☠️ 已重生'); updateHotbar(); updateAdInfo(); });
+
+$('adSpeed').addEventListener('input', (e) => { P.speed = parseFloat(e.target.value); $('adSpeedVal').textContent = P.speed.toFixed(1); });
+$('adJump').addEventListener('input', (e) => { P.js = parseFloat(e.target.value); $('adJumpVal').textContent = P.js.toFixed(1); });
+
+// World edit
+$('adFill').addEventListener('click', () => {
+  const r = parseInt($('adFillR').value) || 5;
+  const bx = Math.floor(P.x), by = Math.floor(P.y), bz = Math.floor(P.z);
+  let count = 0;
+  for (let dx = -r; dx <= r; dx++) for (let dy = -r; dy <= r; dy++) for (let dz = -r; dz <= r; dz++) {
+    if (dx * dx + dy * dy + dz * dz <= r * r) {
+      sBlock(bx + dx, by + dy, bz + dz, adSelectedBlock);
+      count++;
+    }
+  }
+  rebuildChunksAround(bx, bz, r + 2);
+  showNotif(`🌍 填充 ${BINFO[adSelectedBlock].name} x${count} (半径${r})`);
+});
+
+$('adFlatten').addEventListener('click', () => {
+  const r = parseInt($('adFillR').value) || 5;
+  const bx = Math.floor(P.x), bz = Math.floor(P.z);
+  const groundY = findSpawnY(bx, bz) - 2;
+  let count = 0;
+  for (let dx = -r; dx <= r; dx++) for (let dz = -r; dz <= r; dz++) {
+    if (dx * dx + dz * dz <= r * r) {
+      for (let y = groundY + 1; y < WH; y++) sBlock(bx + dx, y, bz + dz, B.AIR);
+      sBlock(bx + dx, groundY, bz + dz, B.STONE);
+      sBlock(bx + dx, groundY - 1, bz + dz, B.DIRT);
+      count++;
+    }
+  }
+  rebuildChunksAround(bx, bz, r + 2);
+  showNotif(`🔨 平整地形 (半径${r}, ${count}列)`);
+});
+
+$('adExplode').addEventListener('click', () => {
+  const r = parseInt($('adFillR').value) || 5;
+  const bx = Math.floor(P.x), by = Math.floor(P.y + P.h), bz = Math.floor(P.z);
+  let count = 0;
+  for (let dx = -r; dx <= r; dx++) for (let dy = -r; dy <= r; dy++) for (let dz = -r; dz <= r; dz++) {
+    if (dx * dx + dy * dy + dz * dz <= r * r) {
+      const bid = gBlock(bx + dx, by + dy, bz + dz);
+      if (bid !== 0 && bid !== B.BEDROCK) { sBlock(bx + dx, by + dy, bz + dz, B.AIR); count++; }
+    }
+  }
+  rebuildChunksAround(bx, bz, r + 2);
+  showNotif(`💥 爆炸清除 ${count} 个方块 (半径${r})`);
+});
+
+function rebuildChunksAround(wx, wz, range) {
+  const cx = Math.floor(wx / CS), cz = Math.floor(wz / CS);
+  for (let dx = -range; dx <= range; dx++) for (let dz = -range; dz <= range; dz++) buildChunkMesh(cx + dx, cz + dz);
+}
+
+// Build block selection grid
+function buildAdBlockGrid() {
+  const grid = $('adBlockGrid');
+  if (grid.children.length > 0) return;
+  grid.innerHTML = '';
+  for (const id in BINFO) {
+    const bid = parseInt(id);
+    if (bid === B.AIR) continue;
+    const bi = BINFO[bid];
+    const btn = document.createElement('div');
+    btn.className = 'ad-block-btn' + (bid === adSelectedBlock ? ' selected' : '');
+    const ic = mkIcon(bid, 40);
+    btn.appendChild(ic);
+    const label = document.createElement('span');
+    label.textContent = bi.name;
+    btn.appendChild(label);
+    btn.addEventListener('click', () => {
+      adSelectedBlock = bid;
+      grid.querySelectorAll('.ad-block-btn').forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+    });
+    grid.appendChild(btn);
+  }
+}
+
+function updateAdInfo() {
+  const el = $('adInfo');
+  const timeNames = ['午夜','凌晨','清晨','早晨','上午','正午','下午','傍晚','黄昏','夜晚','深夜'];
+  const ti = Math.floor(dayT * timeNames.length);
+  el.innerHTML = `坐标: ${P.x.toFixed(1)}, ${P.y.toFixed(1)}, ${P.z.toFixed(1)} | ` +
+    `血量: ${P.hp}/${P.maxHp} | 飞行: ${P.fly ? '开' : '关'} | ` +
+    `无敌: ${adGod ? '开' : '关'} | 时间: ${timeNames[ti % timeNames.length]} | ` +
+    `速度: ${P.speed.toFixed(1)} | 时间冻结: ${adFreezeTime ? '是' : '否'}`;
+}
+
+// ---- Save Selection Screen ----
+let currentSaveSlot = null;
+
+// New world button - find first empty slot or overwrite slot 1
+$('ssNewBtn').addEventListener('click', () => {
+  const saves = getSaves();
+  let slot = 0;
+  for (let i = 1; i <= 5; i++) { if (!saves[i]) { slot = i; break; } }
+  if (!slot) {
+    if (confirm('所有存档位已满！覆盖存档1?')) slot = 1;
+    else return;
+  }
+  currentSaveSlot = slot;
+  startNewGame(slot);
+});
+
+function buildSaveSelectGrid() {
+  const grid = $('ssGrid');
+  grid.innerHTML = '';
+  const saves = getSaves();
+  for (let i = 1; i <= 5; i++) {
+    const s = saves[i];
+    const div = document.createElement('div');
+    div.className = 'ss-slot' + (s ? ' has-save' : '');
+    if (s) {
+      const num = document.createElement('div');
+      num.className = 'ss-num';
+      num.textContent = '#' + i;
+      div.appendChild(num);
+      const name = document.createElement('div');
+      name.className = 'ss-name';
+      name.textContent = s.name || '存档 ' + i;
+      div.appendChild(name);
+      const info = document.createElement('div');
+      info.className = 'ss-info';
+      const px = s.player ? s.player.x.toFixed(1) : '?';
+      const py = s.player ? s.player.y.toFixed(1) : '?';
+      const pz = s.player ? s.player.z.toFixed(1) : '?';
+      info.innerHTML = `${formatTime(s.timestamp)}<br>坐标: ${px}, ${py}, ${pz}<br>血量: ${s.player ? s.player.hp : 20}/20`;
+      div.appendChild(info);
+    } else {
+      const num = document.createElement('div');
+      num.className = 'ss-num';
+      num.textContent = '#' + i;
+      div.appendChild(num);
+      const empty = document.createElement('div');
+      empty.className = 'ss-empty';
+      empty.textContent = '空存档位';
+      div.appendChild(empty);
+    }
+    div.addEventListener('click', () => {
+      if (s) {
+        // Load existing save
+        currentSaveSlot = i;
+        loadSaveData(s);
+        $('save-select').style.display = 'none';
+        $('blocker').style.display = 'flex';
+        $('playBtn').textContent = '🎮 进入游戏';
+        gameStarted = true;
+        startAutoSave();
+        showNotif(`📂 已加载存档 ${i}: ${s.name || '存档 ' + i}`);
+      } else {
+        // Create new save in this slot
+        currentSaveSlot = i;
+        startNewGame(i);
+      }
+    });
+    grid.appendChild(div);
+  }
+}
+
+function startNewGame(slot) {
+  // Generate fresh world
+  SEED = (Math.random() * 1e9) | 0;
+  chunks.clear();
+  chunkBufs.forEach((m, k) => { if (m) { gl.deleteBuffer(m.vb); gl.deleteBuffer(m.ib); } });
+  chunkBufs.clear();
+  // Reset player
+  P.x = 8; P.z = 8; P.yaw = 0; P.pitch = 0;
+  P.vx = 0; P.vy = 0; P.vz = 0;
+  P.hp = 20; P.fly = false; P.speed = 5.5; P.js = 8.5;
+  // Reset inventory
+  for (let i = 0; i < IS; i++) inv[i] = null;
+  inv[0] = { id: B.CRAFT, n: 1 };
+  inv[1] = { id: B.TORCH, n: 16 };
+  inv[2] = { id: B.PLANKS, n: 32 };
+  selSlot = 0;
+  dayT = 0.3;
+  adGod = false; adFreezeTime = false;
+  // Generate chunks
+  for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) gChunk(dx, dz);
+  for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) buildChunkMesh(dx, dz);
+  P.y = findSpawnY(8, 8);
+  // Auto-save the new world
+  saveToSlot(slot);
+  updateHotbar();
+  $('save-select').style.display = 'none';
+  $('blocker').style.display = 'flex';
+  $('playBtn').textContent = '🎮 进入游戏';
+  gameStarted = true;
+  startAutoSave();
+  showNotif(`🌍 新世界已创建并保存到存档 ${slot}`);
+}
+
+// ---- Save/Load System ----
+const SAVE_KEY = 'mc_saves';
+let autoSave = true, autoSaveTimer = null;
+
+function startAutoSave() {
+  if (autoSaveTimer) clearInterval(autoSaveTimer);
+  autoSaveTimer = setInterval(() => {
+    if (currentSaveSlot && gameStarted) {
+      saveToSlot(currentSaveSlot);
+      showNotif('🔄 自动保存完成');
+    }
+  }, 60000);
+}
+
+function stopAutoSave() {
+  if (autoSaveTimer) { clearInterval(autoSaveTimer); autoSaveTimer = null; }
+}
+
+function getSaveData() {
+  // Collect modified chunk data
+  const chunkData = {};
+  chunks.forEach((data, key) => {
+    // Only save chunks that differ from generation
+    chunkData[key] = data;
+  });
+  return {
+    player: {
+      x: P.x, y: P.y, z: P.z,
+      yaw: P.yaw, pitch: P.pitch,
+      hp: P.hp, fly: P.fly,
+      speed: P.speed, js: P.js
+    },
+    inventory: inv.map(s => s ? { id: s.id, n: s.n } : null),
+    selSlot: selSlot,
+    dayT: dayT,
+    seed: SEED,
+    chunkData: chunkData,
+    godMode: adGod,
+    freezeTime: adFreezeTime
+  };
+}
+
+function loadSaveData(data) {
+  if (!data) return false;
+  // Restore player
+  if (data.player) {
+    P.x = data.player.x; P.y = data.player.y; P.z = data.player.z;
+    P.yaw = data.player.yaw || 0; P.pitch = data.player.pitch || 0;
+    P.hp = data.player.hp || 20; P.fly = data.player.fly || false;
+    P.speed = data.player.speed || 5.5; P.js = data.player.js || 8.5;
+    P.vy = 0; P.vx = 0; P.vz = 0;
+  }
+  // Restore inventory
+  if (data.inventory) {
+    for (let i = 0; i < IS; i++) inv[i] = data.inventory[i] || null;
+  }
+  if (data.selSlot !== undefined) selSlot = data.selSlot;
+  // Restore day/night
+  if (data.dayT !== undefined) dayT = data.dayT;
+  // Restore seed
+  if (data.seed !== undefined) SEED = data.seed;
+  // Restore admin settings
+  adGod = data.godMode || false;
+  adFreezeTime = data.freezeTime || false;
+  $('adGodMode').classList.toggle('active', adGod);
+  $('adFreeze').classList.toggle('active', adFreezeTime);
+  $('adSpeed').value = P.speed;
+  $('adSpeedVal').textContent = P.speed.toFixed(1);
+  $('adJump').value = P.js;
+  $('adJumpVal').textContent = P.js.toFixed(1);
+  // Restore world chunks
+  chunks.clear();
+  chunkBufs.forEach((m, k) => { if (m) { gl.deleteBuffer(m.vb); gl.deleteBuffer(m.ib); } });
+  chunkBufs.clear();
+  if (data.chunkData) {
+    for (const key in data.chunkData) chunks.set(key, data.chunkData[key]);
+  }
+  // Rebuild chunk meshes near player
+  const pcx = Math.floor(P.x / CS), pcz = Math.floor(P.z / CS);
+  for (let dx = -RD; dx <= RD; dx++) for (let dz = -RD; dz <= RD; dz++) {
+    if (dx * dx + dz * dz > RD * RD) continue;
+    const cx = pcx + dx, cz = pcz + dz, k = ck(cx, cz);
+    gChunk(cx, cz);
+    if (!chunkBufs.has(k)) buildChunkMesh(cx, cz);
+  }
+  updateHotbar();
+  updateAdInfo();
+  return true;
+}
+
+function getSaves() {
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch (e) { return {}; }
+}
+
+function setSaves(saves) {
+  try {
+    localStorage.setItem(SAVE_KEY, JSON.stringify(saves));
+  } catch (e) {
+    showNotif('❌ 存档失败: 空间不足');
+  }
+}
+
+function saveToSlot(slot) {
+  const saves = getSaves();
+  const data = getSaveData();
+  data.name = (saves[slot] && saves[slot].name) || '存档 ' + slot;
+  data.timestamp = Date.now();
+  saves[slot] = data;
+  setSaves(saves);
+  showNotif(`💾 已保存到存档 ${slot}: ${data.name}`);
+  buildSaveGrid();
+}
+
+function loadFromSlot(slot) {
+  const saves = getSaves();
+  const data = saves[slot];
+  if (!data) { showNotif('❌ 存档 ' + slot + ' 为空'); return; }
+  loadSaveData(data);
+  showNotif(`📂 已加载存档 ${slot}: ${data.name}`);
+  buildSaveGrid();
+}
+
+function deleteSlot(slot) {
+  const saves = getSaves();
+  if (!saves[slot]) return;
+  delete saves[slot];
+  setSaves(saves);
+  showNotif(`🗑️ 已删除存档 ${slot}`);
+  buildSaveGrid();
+}
+
+function renameSlot(slot) {
+  const saves = getSaves();
+  if (!saves[slot]) return;
+  const newName = prompt('输入存档名称:', saves[slot].name || '存档 ' + slot);
+  if (newName !== null && newName.trim()) {
+    saves[slot].name = newName.trim();
+    setSaves(saves);
+    buildSaveGrid();
+  }
+}
+
+function formatTime(ts) {
+  if (!ts) return '--';
+  const d = new Date(ts);
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function buildSaveGrid() {
+  const grid = $('saveGrid');
+  grid.innerHTML = '';
+  const saves = getSaves();
+  for (let i = 1; i <= 5; i++) {
+    const s = saves[i];
+    const div = document.createElement('div');
+    div.className = 'save-slot' + (s ? ' has-save' : '');
+    if (s) {
+      const name = document.createElement('div');
+      name.className = 'slot-name';
+      name.textContent = s.name || '存档 ' + i;
+      div.appendChild(name);
+      const num = document.createElement('div');
+      num.className = 'slot-num';
+      num.textContent = '#' + i;
+      div.appendChild(num);
+      const info = document.createElement('div');
+      info.className = 'slot-info';
+      const px = s.player ? s.player.x.toFixed(1) : '?';
+      const py = s.player ? s.player.y.toFixed(1) : '?';
+      const pz = s.player ? s.player.z.toFixed(1) : '?';
+      info.innerHTML = `${formatTime(s.timestamp)}<br>坐标: ${px}, ${py}, ${pz}<br>血量: ${s.player ? s.player.hp : 20}/20`;
+      div.appendChild(info);
+      const actions = document.createElement('div');
+      actions.className = 'slot-actions';
+      const loadBtn = document.createElement('button');
+      loadBtn.className = 'save-btn-load'; loadBtn.textContent = '📂 加载';
+      loadBtn.addEventListener('click', (e) => { e.stopPropagation(); loadFromSlot(i); });
+      const delBtn = document.createElement('button');
+      delBtn.className = 'save-btn-del'; delBtn.textContent = '🗑️';
+      delBtn.addEventListener('click', (e) => { e.stopPropagation(); if (confirm('确定删除存档 ' + i + '?')) deleteSlot(i); });
+      actions.appendChild(loadBtn);
+      actions.appendChild(delBtn);
+      div.appendChild(actions);
+    } else {
+      const num = document.createElement('div');
+      num.className = 'slot-num';
+      num.textContent = '#' + i;
+      div.appendChild(num);
+      const empty = document.createElement('div');
+      empty.className = 'save-empty';
+      empty.textContent = '空存档位';
+      div.appendChild(empty);
+    }
+    // Click to save (or rename if occupied)
+    div.addEventListener('click', () => {
+      if (s) {
+        if (confirm('覆盖存档 ' + i + '?')) saveToSlot(i);
+      } else {
+        saveToSlot(i);
+      }
+    });
+    grid.appendChild(div);
+  }
+}
+
+$('adAutoSave').textContent = '🔄 自动保存: 开';
+$('adAutoSave').classList.add('active');
+
+$('adAutoSave').addEventListener('click', () => {
+  autoSave = !autoSave;
+  $('adAutoSave').textContent = `🔄 自动保存: ${autoSave ? '开' : '关'}`;
+  $('adAutoSave').classList.toggle('active', autoSave);
+  if (autoSave) {
+    startAutoSave();
+    showNotif('🔄 自动保存已开启 (每60秒)');
+  } else {
+    stopAutoSave();
+    showNotif('🔄 自动保存已关闭');
+  }
+});
+
+// ---- Init ----
+function init() {
+  $('loadText').textContent = '生成世界地形...';
+  $('loadBar').style.width = '30%';
+  setTimeout(() => {
+    for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) gChunk(dx, dz);
+    $('loadBar').style.width = '60%';
+    $('loadText').textContent = '构建地形网格...';
+    setTimeout(() => {
+      for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) buildChunkMesh(dx, dz);
+      $('loadBar').style.width = '100%';
+      $('loadText').textContent = '准备就绪！';
+      setTimeout(() => {
+        P.x = 8; P.z = 8; P.y = findSpawnY(8, 8);
+        updateHotbar();
+        $('loading').style.display = 'none';
+        $('save-select').style.display = 'flex';
+        buildSaveSelectGrid();
+        requestAnimationFrame(loop);
+      }, 300);
+    }, 100);
+  }, 50);
+}
+init();
+</script>
+</body>
+</html>
