@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>太空侵略者 · SPACE INVADERS</title>
+<style>
+html,body{margin:0;background:#000;color:#0f0;font-family:monospace;height:100%;display:flex;align-items:center;justify-content:center;touch-action:none;user-select:none}
+#box{text-align:center}
+canvas{border:2px solid #0f0;background:#000;touch-action:none}
+#hud{font-size:14px;margin:6px 0}
+#msg{font-size:16px;color:#fff;height:20px}
+#tip{font-size:11px;color:#555;margin-top:6px}
+button{background:#0a0;border:0;color:#000;font-family:monospace;padding:6px 16px;cursor:pointer;margin-top:4px}
+</style>
+</head>
+<body>
+<div id="box">
+  <div id="hud">SCORE <span id="sc">0</span>　WAVE <span id="wv">1</span>　♥ <span id="lf">3</span>　HI <span id="hi">0</span></div>
+  <canvas id="cv" width="480" height="480"></canvas>
+  <div id="msg">按 开始 或 Enter</div>
+  <button id="btn">开始 (Enter)</button>
+  <div id="tip">← → 移动 · 空格 射击 · 摧毁入侵者，别让它们着陆！</div>
+</div>
+<script>
+'use strict';
+const cv=document.getElementById('cv'),cx=cv.getContext('2d');
+const scEl=document.getElementById('sc'),wvEl=document.getElementById('wv'),lfEl=document.getElementById('lf'),hiEl=document.getElementById('hi'),msgEl=document.getElementById('msg'),btn=document.getElementById('btn');
+const W=480,H=480;
+let actx=null;
+function beep(f,d,type,vol){
+  try{
+    if(!actx)actx=new(window.AudioContext||window.webkitAudioContext)();
+    const o=actx.createOscillator(),g=actx.createGain();
+    o.connect(g);g.connect(actx.destination);
+    o.type=type||'square';o.frequency.value=f;
+    g.gain.value=vol||0.04;
+    o.start();o.stop(actx.currentTime+d);
+  }catch(e){}
+}
+let ship,shots,bombs,invaders,shields,ufo,frame,score,lives,wave,state,hi=+(localStorage.getItem('si_hi')||0),dirE,stepT,fireT,ufoT;
+hiEl.textContent=hi;
+function mkShields(){
+  shields=[];
+  const bw=6,bh=12;
+  for(let s=0;s<4;s++){
+    const ox=60+s*120;
+    for(let y=0;y<3;y++)for(let x=0;x<10;x++){
+      if(y===0&&(x<2||x>7))continue;
+      if(y===1&&(x<1||x>8))continue;
+      shields.push({x:ox+x*bw,y:360+y*bh,w:bw,h:bh});
+    }
+  }
+}
+function mkInvaders(){
+  invaders=[];
+  for(let r=0;r<5;r++)for(let c=0;c<11;c++){
+    invaders.push({
+      x:70+c*32,y:60+r*30,w:22,h:14,
+      type:r===0?2:(r<3?1:0),alive:true
+    });
+  }
+  dirE=1;stepT=0;
+}
+function reset(){
+  ship={x:W/2,w:30,h:14};
+  shots=[];bombs=[];ufo=null;
+  frame=0;score=0;lives=3;wave=1;
+  mkInvaders();mkShields();
+  fireT=60;ufoT=600;
+  state='play';
+  upd();
+  msgEl.textContent='';
+}
+function upd(){
+  scEl.textContent=score;wvEl.textContent=wave;lfEl.textContent=lives;
+}
+function nextWave(){
+  wave++;upd();
+  msgEl.textContent='第 '+wave+' 波来袭!';
+  mkInvaders();mkShields();
+  shots=[];bombs=[];ufo=null;ufoT=600;
+}
+function gameOver(){
+  state='over';
+  msgEl.textContent='GAME OVER';
+  if(score>hi){hi=score;localStorage.setItem('si_hi',hi);hiEl.textContent=hi}
+  btn.textContent='再来一局 (Enter)';
+}
+function aliveCount(){return invaders.filter(i=>i.alive).length}
+function invSpeed(){
+  // 剩余越少步进越快
+  const a=aliveCount();
+  return Math.max(2,34-a*0.55-wave*2);
+}
+function update(){
+  frame++;
+  // 玩家
+  if(keys.ArrowLeft)ship.x-=2.4;
+  if(keys.ArrowRight)ship.x+=2.4;
+  ship.x=Math.max(20,Math.min(W-20,ship.x));
+  // 射击
+  if(keys.Space&&frame%24===0&&shots.length<2){
+    shots.push({x:ship.x,y:420,w:3,h:10});
+    beep(880,0.06,'square',0.03);
+  }
+  for(const s of shots)s.y-=6;
+  shots=shots.filter(s=>s.y>-10);
+  // 敌阵步进
+  stepT++;
+  if(stepT>=invSpeed()){
+    stepT=0;
+    const alive=invaders.filter(i=>i.alive);
+    if(alive.length){
+      const minX=Math.min(...alive.map(i=>i.x));
+      const maxX=Math.max(...alive.map(i=>i.x+i.w));
+      if((dirE>0&&maxX+10>W-8)||(dirE<0&&minX-10<8)){
+        for(const i of alive)i.y+=14;
+        dirE*=-1;
+      }else{
+        for(const i of alive)i.x+=dirE*10;
+      }
+      // 低音步进声
+      beep(120+((alive.length%4)*30),0.05,'square',0.02);
+      // 着陆判定
+      if(alive.some(i=>i.y+i.h>=430))gameOver();
+    }
+  }
+  // 敌人开火
+  fireT--;
+  if(fireT<=0){
+    const alive=invaders.filter(i=>i.alive);
+    if(alive.length){
+      const sh=alive[Math.random()*alive.length|0];
+      bombs.push({x:sh.x+sh.w/2,y:sh.y+sh.h,w:3,h:8});
+    }
+    fireT=Math.max(14,60-wave*6-aliveCount()/2);
+  }
+  for(const b of bombs)b.y+=2.2+wave*0.15;
+  bombs=bombs.filter(b=>b.y<H+10);
+  // UFO
+  ufoT--;
+  if(ufoT<=0&&!ufo){ufo={x:-30,y:34,w:26,h:10};ufoT=900}
+  if(ufo){
+    ufo.x+=1.6;
+    if(ufo.x>W+30)ufo=null;
+  }
+  // 子弹命中敌人
+  for(const s of shots){
+    for(const inv of invaders){
+      if(!inv.alive)continue;
+      if(s.x>inv.x-2&&s.x<inv.x+inv.w+2&&s.y<inv.y+inv.h&&s.y+s.h>inv.y){
+        inv.alive=false;s.y=-100;
+        score+=(inv.type===2?30:inv.type===1?20:10);
+        upd();
+        beep(220,0.1,'sawtooth',0.05);
+        break;
+      }
+    }
+    // 命中UFO
+    if(ufo&&s.x>ufo.x&&s.x<ufo.x+ufo.w&&s.y<ufo.y+ufo.h&&s.y+s.h>ufo.y){
+      ufo=null;s.y=-100;score+=100;upd();
+      beep(1200,0.2,'sine',0.06);
+    }
+    // 命中掩体
+    for(const bl of shields){
+      if(s.x>bl.x&&s.x<bl.x+bl.w&&s.y<bl.y+bl.h&&s.y+s.h>bl.y){
+        bl.h-=4;s.y=-100;break;
+      }
+    }
+  }
+  shots=shots.filter(s=>s.y>-10);
+  // 炸弹命中
+  for(const b of bombs){
+    // 玩家
+    if(b.y+b.h>430&&b.y<444&&Math.abs(b.x-ship.x)<17){
+      b.y=H+100;
+      lives--;upd();
+      beep(90,0.4,'sawtooth',0.08);
+      if(lives<=0){gameOver();return}
+    }
+    // 掩体
+    for(const bl of shields){
+      if(b.x>bl.x&&b.x<bl.x+bl.w&&b.y+b.h>bl.y&&b.y<bl.y+bl.h){
+        bl.y+=4;bl.h-=4;b.y=H+100;break;
+      }
+    }
+  }
+  bombs=bombs.filter(b=>b.y<H+10);
+  shields=shields.filter(bl=>bl.h>0);
+  // 清波
+  if(aliveCount()===0)nextWave();
+}
+function draw(){
+  cx.fillStyle='#000';cx.fillRect(0,0,W,H);
+  // 星星
+  cx.fillStyle='#123';
+  for(let i=0;i<20;i++){
+    cx.fillRect((i*97+frame*0.2)%W,(i*61)%H,2,2);
+  }
+  // 掩体
+  cx.fillStyle='#0a4';
+  for(const bl of shields)cx.fillRect(bl.x,bl.y,bl.w,bl.h);
+  // 敌人（像素画）
+  for(const inv of invaders){
+    if(!inv.alive)continue;
+    const ph=(frame>>4)%2;
+    cx.fillStyle=inv.type===2?'#f6f':inv.type===1?'#6f6':'#6cf';
+    // 简单像素人形
+    cx.fillRect(inv.x+4,inv.y,14,6);
+    cx.fillRect(inv.x,inv.y+6,22,4);
+    cx.fillRect(inv.x+2,inv.y+10,4,4);
+    cx.fillRect(inv.x+16,inv.y+10+(ph?2:0),4,4);
+    cx.fillRect(inv.x+6,inv.y+10+(ph?0:2),4,4);
+  }
+  // UFO
+  if(ufo){
+    cx.fillStyle='#f44';
+    cx.fillRect(ufo.x,ufo.y+3,26,4);
+    cx.fillRect(ufo.x+6,ufo.y,14,3);
+  }
+  // 子弹
+  cx.fillStyle='#fff';
+  for(const s of shots)cx.fillRect(s.x,s.y,s.w,s.h);
+  cx.fillStyle='#f80';
+  for(const b of bombs)cx.fillRect(b.x,b.y,b.w,b.h);
+  // 飞船
+  cx.fillStyle='#0f0';
+  cx.fillRect(ship.x-15,432,30,6);
+  cx.fillRect(ship.x-5,424,10,8);
+  // 地线
+  cx.fillStyle='#0f0';cx.fillRect(0,444,W,2);
+  if(state==='over'){
+    cx.fillStyle='rgba(0,0,0,.6)';cx.fillRect(0,200,W,80);
+    cx.fillStyle='#f44';cx.font='bold 40px monospace';cx.textAlign='center';
+    cx.fillText('GAME OVER',W/2,250);
+    cx.fillStyle='#fff';cx.font='16px monospace';
+    cx.fillText('得分 '+score,W/2,272);
+  }
+}
+const keys={};
+document.addEventListener('keydown',e=>{
+  if(['ArrowLeft','ArrowRight',' '].includes(e.key))e.preventDefault();
+  if(e.key==='ArrowLeft')keys.ArrowLeft=true;
+  if(e.key==='ArrowRight')keys.ArrowRight=true;
+  if(e.key===' ')keys.Space=true;
+  if(e.key==='Enter'&&(state!=='play')){reset();btn.textContent='重开 (Enter)'}
+});
+document.addEventListener('keyup',e=>{
+  if(e.key==='ArrowLeft')keys.ArrowLeft=false;
+  if(e.key==='ArrowRight')keys.ArrowRight=false;
+  if(e.key===' ')keys.Space=false;
+});
+btn.onclick=()=>{if(state!=='play'){reset();btn.textContent='重开 (Enter)'}};
+// 触屏
+const tp=document.createElement('div');
+tp.style.cssText='display:none;position:fixed;bottom:8px;left:0;right:0;text-align:center';
+[['←',()=>keys.ArrowLeft=true,()=>keys.ArrowLeft=false],['🔥',()=>{keys.Space=true;setTimeout(()=>keys.Space=false,80)},null],['→',()=>keys.ArrowRight=true,()=>keys.ArrowRight=false]].forEach(([k,dn,up])=>{
+  const b=document.createElement('button');
+  b.textContent=k;b.style.cssText='width:64px;height:52px;font-size:20px;margin:0 6px';
+  b.addEventListener('pointerdown',e=>{e.preventDefault();dn()});
+  if(up)b.addEventListener('pointerup',up);
+  tp.appendChild(b);
+});
+document.body.appendChild(tp);
+if('ontouchstart' in window)tp.style.display='block';
+function loop(){
+  requestAnimationFrame(loop);
+  if(state==='play')update();
+  draw();
+}
+loop();
+</script>
+</body>
+</html>

@@ -1,0 +1,229 @@
+<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>天蚕变 · QIX STYLE</title>
+<style>
+html,body{margin:0;background:#05060a;color:#fff;font-family:"Segoe UI",system-ui,sans-serif;height:100%;display:flex;align-items:center;justify-content:center;touch-action:none;user-select:none}
+#wrap{display:flex;gap:14px;align-items:flex-start}
+canvas{border:2px solid #2a6a8a;background:#000;touch-action:none}
+.side{font-size:12px;line-height:1.7;color:#7cc;width:150px}
+h1{color:#0ff;margin:0 0 4px;font-size:16px}
+button{background:#0891b2;color:#fff;border:0;padding:6px 14px;font-size:13px;border-radius:4px;cursor:pointer;margin-top:6px}
+#msg{color:#ff4;font-weight:bold;margin-top:6px;min-height:18px}
+.keys{font-size:11px;color:#567;margin-top:10px}
+@media(max-width:700px){#wrap{flex-direction:column;align-items:center}.side{width:auto;font-size:11px}.keys{display:none}}
+</style></head><body>
+<div id="wrap"><canvas id="cv" width="640" height="480"></canvas>
+<div class="side"><h1>天蚕变<br>GALS PANIC</h1>
+分数 <div id="sc" style="color:#ff3;font-size:18px">0</div>
+占领 <div id="pc" style="color:#0ff;font-size:16px">0%</div>
+目标 <div id="tg">70%</div>
+生命 <div id="lf">♥♥♥</div>
+<div id="msg"></div><button id="btn">开始</button>
+<div class="keys">方向键移动：沿已占领区<br>边缘出击画线，返回即围地<br>火偶沿边界巡逻，别碰！<br>画线时避开中央旋涡</div></div></div>
+<script>
+const CW=64, CH=48, S=10, cv=document.getElementById('cv'), cx=cv.getContext('2d');
+const sc=document.getElementById('sc'),pcEl=document.getElementById('pc'),tgEl=document.getElementById('tg'),lfEl=document.getElementById('lf'),btn=document.getElementById('btn'),msgEl=document.getElementById('msg');
+let grid, trail, player, dir, onTrail, sparx, qix, score, lives, lv, target, over, invT;
+const DIRV={0:[0,-1],1:[1,0],2:[0,1],3:[-1,0]};
+let actx=null;
+function beep(f,d,type){
+  try{
+    if(!actx)actx=new(window.AudioContext||window.webkitAudioContext)();
+    const o=actx.createOscillator(),g=actx.createGain();
+    o.connect(g);g.connect(actx.destination);
+    o.type=type||'square';o.frequency.value=f;g.gain.value=0.05;
+    o.start();o.stop(actx.currentTime+d);
+  }catch(e){}
+}
+function newField(){
+  grid=Array.from({length:CH},()=>Array(CW).fill(0));
+  for(let y=0;y<CH;y++)for(let x=0;x<CW;x++)
+    if(x<2||x>=CW-2||y<2||y>=CH-2)grid[y][x]=1;
+}
+function resetPlayer(){
+  player={x:CW>>1,y:CH-3};
+  dir=-1;onTrail=false;
+  trail=Array.from({length:CH},()=>Array(CW).fill(0));
+}
+function newSparx(){
+  sparx=[
+    {x:2,y:CH-3,d:1},
+    {x:CW-3,y:2,d:3},
+    {x:CW-3,y:CH-3,d:3,slow:true}
+  ];
+}
+function spawnQix(){
+  qix={x:CW/2,y:CH/2,dx:0.04+lv*0.008,dy:0.035+lv*0.007,t:0};
+}
+function updHud(){
+  sc.textContent=score;
+  let n=0;for(let y=0;y<CH;y++)for(let x=0;x<CW;x++)if(grid[y][x])n++;
+  const pc=Math.round(n*100/(CW*CH));
+  pcEl.textContent=pc+'%';
+  tgEl.textContent=target+'%';
+  lfEl.textContent='♥'.repeat(Math.max(0,lives));
+  return pc;
+}
+function reset(){
+  score=0;lives=3;lv=1;target=70;over=false;invT=120;frame=0;
+  newField();resetPlayer();newSparx();spawnQix();
+  updHud();msgEl.textContent='';
+}
+function die(){
+  if(invT>0||over)return;
+  lives--;beep(120,0.4,'sawtooth');
+  if(lives<=0){over=true;updHud();msgEl.textContent='GAME OVER';btn.textContent='再来一局';return}
+  msgEl.textContent='被击中! 剩余生命 '+lives;
+  resetPlayer();newSparx();invT=120;
+}
+function fillAreas(){
+  const seen=Array.from({length:CH},()=>Array(CW).fill(false));
+  let filled=0;
+  for(let y=0;y<CH;y++)for(let x=0;x<CW;x++){
+    if(grid[y][x]||trail[y][x]||seen[y][x])continue;
+    const cells=[],st=[[x,y]];seen[y][x]=true;
+    while(st.length){
+      const[px0,py0]=st.pop();cells.push([px0,py0]);
+      for(const[ddx,ddy]of[[1,0],[-1,0],[0,1],[0,-1]]){
+        const nx0=px0+ddx,ny0=py0+ddy;
+        if(nx0<0||nx0>=CW||ny0<0||ny0>=CH||seen[ny0][nx0])continue;
+        if(grid[ny0][nx0]||trail[ny0][nx0])continue;
+        seen[ny0][nx0]=true;st.push([nx0,ny0]);
+      }
+    }
+    const hasQ=qix&&cells.some(([x,y])=>Math.abs(x+0.5-qix.x)<2.5&&Math.abs(y+0.5-qix.y)<2.5);
+    if(!hasQ){for(const[x,y]of cells){grid[y][x]=1;filled++}}
+  }
+  if(filled){
+    score+=filled;
+    beep(660,0.15);setTimeout(()=>beep(880,0.2),120);
+    trail=Array.from({length:CH},()=>Array(CW).fill(0));
+  }
+}
+function closeTrail(){
+  onTrail=false;
+  fillAreas();
+  const pc=updHud();
+  if(pc>=target){
+    lv++;target=Math.min(90,70+lv*3);
+    msgEl.textContent='过关! 第'+lv+'关 (目标'+target+'%)';
+    beep(880,0.3);setTimeout(()=>beep(1180,0.3),200);
+    newField();resetPlayer();newSparx();spawnQix();invT=90;
+  }
+}
+function stepPlayer(nd){
+  if(nd>=0&&nd!==(dir^2)||dir<0)dir=nd; // 允许直接反向（可折返）
+  if(nd>=0)dir=nd;
+  if(dir<0)return;
+  const[dx,dy]=DIRV[dir];
+  const nx0=player.x+dx, ny0=player.y+dy;
+  if(nx0<0||nx0>=CW||ny0<0||ny0>=CH){dir=-1;return}
+  const c=grid[ny0][nx0], t=trail[ny0][nx0];
+  if(t){player.x=nx0;player.y=ny0;return}      // 沿自己线走
+  if(!c&&!t){                                   // 空白：延伸画线
+    if(!onTrail){onTrail=true;trail[player.y][player.x]=1}
+    trail[ny0][nx0]=1;player.x=nx0;player.y=ny0;
+    beep(900+trail.length%7*60,0.03);
+    return;
+  }
+  if(c){                                        // 已占领区
+    if(onTrail){closeTrail()}
+    player.x=nx0;player.y=ny0;
+  }
+}
+function sparxStep(s){
+  const order=[(s.d+1)%4,s.d,(s.d+3)%4,(s.d+2)%4];
+  for(const d of order){
+    const[dx,dy]=DIRV[d];
+    const nx0=s.x+dx, ny0=s.y+dy;
+    if(nx0<0||nx0>=CW||ny0<0||ny0>=CH)continue;
+    if(!grid[ny0][nx0])continue;
+    let edge=false;
+    for(const[ddx,ddy]of[[1,0],[-1,0],[0,1],[0,-1]]){
+      const ex=nx0+ddx,ey=ny0+ddy;
+      if(ex<0||ex>=CW||ey<0||ey>=CH||!grid[ey][ex]){edge=true;break}
+    }
+    if(!edge)continue;
+    s.d=d;s.x=nx0;s.y=ny0;
+    return;
+  }
+}
+let frame=0;
+function tick(){
+  requestAnimationFrame(tick);
+  if(over){draw();return}
+  frame++;
+  if(invT>0)invT--;
+  if(frame%3===0&&keys.dir!==undefined)stepPlayer(keys.dir);
+  if(frame%9===0)for(const s of sparx)sparxStep(s);
+  // qix 移动
+  qix.t+=0.15;
+  qix.x+=qix.dx;qix.y+=qix.dy;
+  if(qix.x<4||qix.x>CW-4)qix.dx*=-1;
+  if(qix.y<4||qix.y>CH-4)qix.dy*=-1;
+  // qix 碰线/玩家
+  if(onTrail){
+    const qx=Math.round(qix.x),qy=Math.round(qix.y);
+    outer:for(let y=qy-2;y<=qy+2;y++)for(let x=qx-2;x<=qx+2;x++){
+      if(y<0||y>=CH||x<0||x>=CW)continue;
+      if(trail[y][x]){die();break outer}
+    }
+    if(Math.hypot(qix.x-player.x,qix.y-player.y)<2)die();
+  }
+  // sparx 碰玩家
+  for(const s of sparx)
+    if(Math.abs(s.x-player.x)<1&&Math.abs(s.y-player.y)<1)die();
+  draw();
+}
+function draw(){
+  cx.fillStyle='#000';cx.fillRect(0,0,640,480);
+  for(let y=0;y<CH;y++)for(let x=0;x<CW;x++){
+    if(grid[y][x]){cx.fillStyle='#103a5a';cx.fillRect(x*S,y*S,S,S)}
+    if(trail[y][x]){cx.fillStyle='#ffe066';cx.fillRect(x*S+2,y*S+2,S-4,S-4)}
+  }
+  if(qix){
+    cx.save();cx.translate(qix.x*S,qix.y*S);
+    for(let i=0;i<6;i++){
+      const a=qix.t+i*Math.PI/3;
+      cx.strokeStyle=i%2?'#ff3355':'#33ff88';
+      cx.beginPath();cx.moveTo(0,0);
+      cx.lineTo(Math.cos(a)*36,Math.sin(a)*36);
+      cx.stroke();
+    }
+    cx.restore();
+  }
+  for(const s of sparx){
+    cx.fillStyle=invT>0&&invT%10<5?'#fff':'#ff5522';
+    cx.beginPath();cx.arc(s.x*S+S/2,s.y*S+S/2,5,0,7);cx.fill();
+  }
+  cx.fillStyle=invT>0&&invT%10<5?'rgba(0,255,255,.3)':'#00ffff';
+  cx.fillRect(player.x*S+2,player.y*S+2,6,6);
+  if(over){
+    cx.fillStyle='rgba(0,0,0,.6)';cx.fillRect(0,200,640,80);
+    cx.fillStyle='#ff4';cx.font='bold 36px monospace';cx.textAlign='center';
+    cx.fillText('GAME OVER',320,250);
+  }
+}
+const keys={dir:undefined};
+document.addEventListener('keydown',e=>{
+  const M={ArrowUp:0,ArrowRight:1,ArrowDown:2,ArrowLeft:3,w:0,d:1,s:2,a:3,W:0,D:1,S:2,A:3};
+  if(M[e.key]!==undefined){e.preventDefault();keys.dir=M[e.key]}
+  if(e.key==='Enter'&&(over||!grid)){reset();btn.textContent='重开'}
+});
+document.addEventListener('keyup',e=>{keys.dir=undefined});
+btn.onclick=()=>{if(over||!grid||btn.textContent==='开始'){reset();btn.textContent='重开'}};
+// 触屏方向键
+const tp=document.createElement('div');
+tp.style.cssText='display:none;position:fixed;bottom:8px;left:0;right:0;text-align:center';
+[['↑',0],['→',1],['↓',2],['←',3]].forEach(([k,d])=>{
+  const b=document.createElement('button');b.textContent=k;
+  b.style.cssText='width:56px;height:48px;font-size:20px;margin:0 4px;background:#155e75';
+  b.addEventListener('pointerdown',e=>{e.preventDefault();keys.dir=d});
+  b.addEventListener('pointerup',()=>{keys.dir=undefined});
+  b.addEventListener('pointerleave',()=>{keys.dir=undefined});
+  tp.appendChild(b);
+});
+document.body.appendChild(tp);
+if('ontouchstart' in window)tp.style.display='block';
+reset();
+requestAnimationFrame(tick);
+</script></body></html>

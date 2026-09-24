@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>大金刚 · DONKEY KONG</title>
+<style>
+html,body{margin:0;background:#000;color:#f33;font-family:monospace;height:100%;display:flex;align-items:center;justify-content:center;touch-action:none;user-select:none}
+#box{text-align:center}
+canvas{border:2px solid #b22;background:#000;touch-action:none}
+#hud{font-size:13px;color:#f66;margin:6px 0}
+#msg{font-size:15px;color:#fc0;height:20px}
+#tip{font-size:11px;color:#556;margin-top:6px}
+button{background:#b22;border:0;color:#fff;font-family:monospace;padding:6px 16px;cursor:pointer;margin-top:4px}
+</style>
+</head>
+<body>
+<div id="box">
+  <div id="hud">SCORE <span id="sc">0</span>　BONUS <span id="bn">5000</span>　♥ <span id="lf">3</span>　HI <span id="hi">0</span></div>
+  <canvas id="cv" width="448" height="480"></canvas>
+  <div id="msg">按 开始 或 Enter</div>
+  <button id="btn">开始 (Enter)</button>
+  <div id="tip">← → 移动 · ↑/↓ 爬梯 · 空格 跳 · 拿锤子可砸滚桶 · 爬到顶救出 Pauline!</div>
+</div>
+<script>
+'use strict';
+const cv=document.getElementById('cv'),cx=cv.getContext('2d');
+const scEl=document.getElementById('sc'),bnEl=document.getElementById('bn'),lfEl=document.getElementById('lf'),hiEl=document.getElementById('hi'),msgEl=document.getElementById('msg'),btn=document.getElementById('btn');
+const W=448,H=480;
+let hi=+(localStorage.getItem('dk_hi')||0);
+hiEl.textContent=hi;
+let actx=null;
+function beep(f,d,type,vol){
+  try{
+    if(!actx)actx=new(window.AudioContext||window.webkitAudioContext)();
+    const o=actx.createOscillator(),g=actx.createGain();
+    o.connect(g);g.connect(actx.destination);
+    o.type=type||'square';o.frequency.value=f;g.gain.value=vol||0.035;
+    o.start();o.stop(actx.currentTime+d);
+  }catch(e){}
+}
+let p,barrels,hammers,frame,score,bonus,lives,state,keys,bonusT,dk,peach,timer;
+const GIRDERS=[
+  {y:440,x1:16,x2:432},          // 底层
+  {y:368,x1:112,x2:432,slant:1}, // 2层 左高右低? 反
+  {y:296,x1:16,x2:336,slant:-1},
+  {y:224,x1:112,x2:432,slant:1},
+  {y:152,x1:16,x2:336,slant:-1},
+  {y:80,x1:16,x2:432,slant:1},   // 顶层
+];
+const LADDERS=[
+  {x:200,y1:440,y2:368},{x:400,y1:440,y2:368},
+  {x:60,y1:368,y2:296},{x:280,y1:368,y2:296},
+  {x:180,y1:296,y2:224},{x:396,y1:296,y2:224},
+  {x:70,y1:224,y2:152},{x:300,y1:224,y2:152},
+  {x:220,y1:152,y2:80},
+];
+const BROKEN=[{x:280,y1:368,y2:296}]; // 破梯(不能爬)
+function reset(){
+  p={x:40,y:440,vy:0,onG:true,onLadder:false,hammerT:0,hasHammer:false,dir:1,climbT:0};
+  barrels=[];frame=0;score=0;bonus=5000;lives=3;bonusT=0;
+  hammers=[{x:300,y:296,taken:false},{x:150,y:152,taken:false}];
+  dk={x:60,y:36,timer:120};
+  peach={x:380,y:52};
+  keys={};
+  state='play';upd();msgEl.textContent='爬上顶端救出 Pauline!';
+  setTimeout(()=>{if(msgEl.textContent.includes('Pauline'))msgEl.textContent=''},2200);
+}
+function upd(){
+  scEl.textContent=score;bnEl.textContent=bonus;lfEl.textContent=lives;
+}
+function gameOver(){
+  state='over';msgEl.textContent='GAME OVER';
+  if(score>hi){hi=score;localStorage.setItem('dk_hi',hi);hiEl.textContent=hi}
+  btn.textContent='再来一局 (Enter)';
+}
+function victory(){
+  state='win';msgEl.textContent='♥ PAULINE 救出来了! ♥';
+  if(score>hi){hi=score;localStorage.setItem('dk_hi',hi);hiEl.textContent=hi}
+  btn.textContent='再玩一次 (Enter)';
+  beep(600,0.2);setTimeout(()=>beep(800,0.2),220);setTimeout(()=>beep(1000,0.5),440);
+}
+function killP(){
+  if(state!=='play')return;
+  beep(90,0.5,'sawtooth',0.09);
+  lives--;upd();
+  if(lives<=0){gameOver();return}
+  msgEl.textContent='小心!';
+  setTimeout(()=>{if(state==='play'){p.x=40;p.y=440;p.vy=0;p.hasHammer=false;p.hammerT=0;barrels=[];dk.timer=90}},600);
+  state='dead';setTimeout(()=>{if(state==='dead')state='play'},600);
+}
+function girderAt(x,y){
+  // 返回该位置附近的板y
+  for(const g of GIRDERS){
+    if(Math.abs(y-g.y)<10&&x>=g.x1-4&&x<=g.x2+4)return g;
+  }
+  return null;
+}
+function ladderAt(x,y){
+  for(const l of LADDERS){
+    if(Math.abs(x-l.x)<10&&y>=l.y2-4&&y<=l.y1+4)return l;
+  }
+  return null;
+}
+function update(){
+  frame++;
+  if(bonus>0&&frame%30===0){bonus-=100;upd();if(bonus<=0){bonus=0;killP()}}
+  const spd=2.2;
+  if(p.hammerT>0){p.hammerT--;if(p.hammerT===0){p.hasHammer=false;upd()}}
+  // 移动
+  if(!p.onLadder){
+    if(keys.ArrowLeft){p.x-=spd;p.dir=-1}
+    if(keys.ArrowRight){p.x+=spd;p.dir=1}
+    // 跳
+    if(keys.Space&&p.onG){p.vy=-7.5;p.onG=false;beep(300,0.08,'sine',0.02)}
+    if(!p.onG){
+      p.vy+=0.45;p.y+=p.vy;
+      const g=girderAt(p.x,p.y);
+      if(p.vy>0&&g&&p.y>=g.y-14&&p.y<=g.y+2){p.y=g.y-14;p.vy=0;p.onG=true}
+      if(p.y>H+20){killP();return}
+    }
+    // 重力站立
+    if(p.onG){
+      const g=girderAt(p.x,p.y);
+      if(!g)p.onG=false; // 走出板边缘
+    }
+    // 上梯（在梯子上按上）
+    if(keys.ArrowUp&&p.onG){
+      const l=ladderAt(p.x,p.y-16);
+      if(l){p.onLadder=true;p.climbT=0;beep(200,0.06,'sine',0.02)}
+    }
+  }else{
+    // 爬梯
+    p.vy=0;
+    if(keys.ArrowUp){
+      const l=ladderAt(p.x,p.y-16);
+      if(l&&p.y-16>=l.y2-2)p.y-=1.8;
+      else if(p.y-16<80-14){ // 顶层完成
+      }else{p.y-=0}
+    }
+    if(keys.ArrowDown){
+      const l=ladderAt(p.x,p.y+16);
+      if(l)p.y+=1.8;
+    }
+    // 到达梯子顶：站上板
+    const l=ladderAt(p.x,p.y);
+    if(l&&Math.abs(p.y-l.y2)<6&&keys.ArrowUp){
+      p.onLadder=false;p.y=l.y2-14;p.onG=true;
+      score+=300;upd();
+      beep(700,0.1,'sine',0.04);
+    }
+  }
+  p.x=Math.max(12,Math.min(W-12,p.x));
+  // DK 扔桶
+  dk.timer--;
+  if(dk.timer<=0){
+    dk.timer=Math.max(70,140-score/80);
+    barrels.push({x:dk.x+30,y:80,vx:0,vy:0,onG:true,dir:1,r:11,live:true});
+    beep(150,0.2,'square',0.04);
+  }
+  // 滚桶物理
+  for(const b of barrels){
+    if(!b.live)continue;
+    if(!b.onG){
+      b.vy+=0.4;b.y+=b.vy;
+      const g=girderAt(b.x,b.y);
+      if(b.vy>0&&g&&b.y>=g.y-12&&b.y<=g.y+4){b.y=g.y-12;b.vy=0;b.onG=true;
+        // 落板随机方向倾向
+        if(Math.random()<0.2)b.dir*=-1;
+      }
+      if(b.y>H+20){b.live=false;continue}
+    }else{
+      b.x+=b.dir*(1.6+score/3000);
+      const g=girderAt(b.x,b.y);
+      if(!g){
+        // 掉落
+        b.onG=false;b.vy=0;
+      }else{
+      if(b.x<=g.x1+8||b.x>=g.x2-8){
+        // 走到板端：掉落到下一层
+        b.onG=false;b.vy=0;
+        b.dir=b.x<=g.x1+8?1:-1;
+      }else if(Math.random()<0.003)b.dir*=-1;
+      }
+      // 破梯口滚落加速
+    }
+    // 碰玩家
+    if(p.hasHammer){
+      if(Math.abs(b.x-p.x)<26&&Math.abs(b.y-(p.y-10))<24){
+        b.live=false;score+=500;upd();
+        beep(400,0.15,'square',0.05);
+      }
+    }else if(Math.abs(b.x-p.x)<18&&Math.abs(b.y-(p.y-6))<20){
+      b.live=false;killP();return;
+    }
+  }
+  barrels=barrels.filter(b=>b.live);
+  // 锤子拾取
+  for(const hm of hammers){
+    if(!hm.taken&&Math.abs(hm.x-p.x)<16&&Math.abs(hm.y-(p.y-6))<16){
+      hm.taken=true;p.hasHammer=true;p.hammerT=420;
+      score+=200;upd();beep(900,0.15,'sine',0.05);
+    }
+  }
+  // 到顶判定
+  if(p.y<80){
+    victory();
+  }
+}
+function draw(){
+  cx.fillStyle='#000';cx.fillRect(0,0,W,H);
+  // 钢梁
+  for(const g of GIRDERS){
+    cx.fillStyle='#e04040';
+    const rows=6;
+    for(let i=0;i<rows;i++){
+      const yy=g.y+6+i*3;
+      cx.fillRect(g.x1,yy,g.x2-g.x1,2);
+    }
+    // 铆钉
+    cx.fillStyle='#f88';
+    for(let x=g.x1;x<g.x2;x+=14)cx.fillRect(x,g.y+2,3,3);
+  }
+  // 梯子
+  for(const l of LADDERS){
+    cx.fillStyle='#40c0f0';
+    cx.fillRect(l.x-6,l.y2,3,l.y1-l.y2);
+    cx.fillRect(l.x+4,l.y2,3,l.y1-l.y2);
+    for(let y=l.y2;y<l.y1;y+=10)cx.fillRect(l.x-6,y,13,2);
+  }
+  // Pauline
+  cx.fillStyle='#f8c';cx.fillRect(peach.x-5,peach.y,10,14);
+  cx.fillStyle='#f8c8d8';cx.beginPath();cx.arc(peach.x,peach.y-4,5,0,7);cx.fill();
+  cx.fillStyle='#802';cx.fillRect(peach.x-5,peach.y-9,10,3);
+  // HELP! 气泡
+  if(frame%80<40){
+    cx.fillStyle='#f44';cx.font='bold 11px monospace';
+    cx.fillText('HELP!',peach.x+10,peach.y-6);
+  }
+  // DK
+  cx.fillStyle='#a66';
+  cx.fillRect(dk.x-4,dk.y,52,34);
+  cx.fillStyle='#844';
+  cx.fillRect(dk.x,dk.y-10,44,14); // 头
+  cx.fillStyle='#c88';
+  cx.fillRect(dk.x+4,dk.y-6,8,5);cx.fillRect(dk.x+30,dk.y-6,8,5); // 眼
+  cx.fillStyle='#533';
+  cx.fillRect(dk.x-12,dk.y+6,10,22);cx.fillRect(dk.x+42,dk.y+6,10,22); // 臂
+  // 锤子
+  for(const hm of hammers){
+    if(hm.taken)continue;
+    cx.fillStyle='#aa0';
+    cx.fillRect(hm.x-3,hm.y-14,7,12);
+    cx.fillStyle='#a80';
+    cx.fillRect(hm.x-8,hm.y-20,17,7);
+  }
+  // 滚桶
+  for(const b of barrels){
+    cx.fillStyle='#c84';
+    cx.save();cx.translate(b.x,b.y);
+    cx.rotate(frame*0.1*b.dir);
+    cx.fillRect(-10,-10,20,20);
+    cx.fillStyle='#853';
+    cx.fillRect(-10,-4,20,3);
+    cx.restore();
+  }
+  // 玩家 Mario(Jumpman)
+  const px0=p.x,py0=p.y;
+  cx.fillStyle='#e33'; // 红帽衣
+  cx.fillRect(px0-7,py0-26,14,10);
+  cx.fillStyle='#fca'; // 脸
+  cx.beginPath();cx.arc(px0,py0-20,5,0,7);cx.fill();
+  cx.fillStyle='#2060c0'; // 蓝背带裤
+  cx.fillRect(px0-7,py0-16,14,9);
+  cx.fillStyle='#640'; // 鞋
+  cx.fillRect(px0-8,py0-6,6,5);cx.fillRect(px0+2,py0-6,6,5);
+  if(p.hasHammer){
+    const sw=p.hammerT%40<20?1:-1;
+    cx.save();cx.translate(px0,py0-20);cx.rotate(sw*1.2);
+    cx.fillStyle='#a80';cx.fillRect(-4,-18,8,10);
+    cx.fillStyle='#652';cx.fillRect(-2,-8,4,10);
+    cx.restore();
+  }
+  // HUD
+  cx.fillStyle='#fff';cx.font='bold 12px monospace';cx.textAlign='left';
+  cx.fillText('L='+(lives),20,20);
+  cx.fillStyle='#f80';cx.fillText('BONUS '+bonus,120,20);
+  if(state==='over'||state==='win'){
+    cx.fillStyle='rgba(0,0,0,.6)';cx.fillRect(0,210,W,80);
+    cx.fillStyle=state==='win'?'#f8c':'#f44';
+    cx.font='bold 34px monospace';cx.textAlign='center';
+    cx.fillText(state==='win'?'STAGE CLEAR!':'GAME OVER',W/2,252);
+    cx.fillStyle='#fff';cx.font='13px monospace';
+    cx.fillText('SCORE '+score,W/2,274);
+  }
+}
+const KM={ArrowLeft:1,ArrowRight:1,ArrowUp:1,ArrowDown:1,' ':1};
+document.addEventListener('keydown',e=>{
+  if(KM[e.key])e.preventDefault();
+  keys[e.key]=true;
+  if(e.key==='Enter'&&state!=='play'&&state!=='dead'){reset();btn.textContent='重开 (Enter)'}
+});
+document.addEventListener('keyup',e=>{keys[e.key]=false});
+btn.onclick=()=>{if(state!=='play'&&state!=='dead'){reset();btn.textContent='重开 (Enter)'}};
+if('ontouchstart' in window){
+  const tp=document.createElement('div');
+  tp.style.cssText='position:fixed;bottom:8px;left:0;right:0;text-align:center';
+  [['←',()=>keys.ArrowLeft=true,()=>keys.ArrowLeft=false],['→',()=>keys.ArrowRight=true,()=>keys.ArrowRight=false],['↑',()=>keys.ArrowUp=true,()=>keys.ArrowUp=false],['↓',()=>keys.ArrowDown=true,()=>keys.ArrowDown=false],['跳',()=>keys.Space=true,()=>keys.Space=false]].forEach(([k,dn,up])=>{
+    const b=document.createElement('button');
+    b.textContent=k;b.style.cssText='width:52px;height:48px;font-size:18px;margin:0 3px;background:#b22';
+    b.addEventListener('pointerdown',e=>{e.preventDefault();dn()});
+    b.addEventListener('pointerup',up);
+    tp.appendChild(b);
+  });
+  document.body.appendChild(tp);
+}
+reset();
+function loop(){requestAnimationFrame(loop);if(state==='play')update();draw()}
+loop();
+</script>
+</body>
+</html>

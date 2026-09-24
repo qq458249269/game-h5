@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>西游释厄传</title>
+<style>
+html,body{margin:0;background:#12100a;color:#ffe;font-family:"KaiTi","STKaiti",serif;height:100%;display:flex;align-items:center;justify-content:center;touch-action:none;user-select:none}
+#box{text-align:center}
+canvas{border:3px solid #a08a2a;background:#000;touch-action:none}
+#hud{font-size:14px;color:#ed5;margin:6px 0}
+#msg{font-size:16px;color:#f80;height:22px}
+#tip{font-size:11px;color:#776;margin-top:4px;max-width:660px}
+button{background:#8a6a1a;border:0;color:#ffe;font-family:inherit;padding:6px 16px;cursor:pointer;margin-top:4px}
+</style>
+</head>
+<body>
+<div id="box">
+  <div id="hud">悟空 <span id="hp" style="color:#f44">██████████</span> <span id="mp" style="color:#44f">██████████</span>　法术 <span id="mg">⚡雷</span>　得分 <span id="sc">0</span></div>
+  <canvas id="cv" width="640" height="400"></canvas>
+  <div id="msg">按 开始 或 Enter</div>
+  <button id="btn">开始 (Enter)</button>
+  <div id="tip">←→↑↓ 走位 · Z 金箍棒三连击 · 空格 筋斗云跳 · X 雷法术(耗MP) · C 火法术(耗MP) · 收葫芦回MP · 火焰山斗牛魔王</div>
+</div>
+<script>
+'use strict';
+const cv=document.getElementById('cv'),cx=cv.getContext('2d');
+const hpEl=document.getElementById('hp'),mpEl=document.getElementById('mp'),mgEl=document.getElementById('mg'),scEl=document.getElementById('sc'),msgEl=document.getElementById('msg'),btn=document.getElementById('btn');
+const W=640,H=400,YMIN=298,YMAX=386,LEVEL=4600;
+let actx=null;
+function beep(f,d,type,vol){
+  try{
+    if(!actx)actx=new(window.AudioContext||window.webkitAudioContext)();
+    const o=actx.createOscillator(),g=actx.createGain();
+    o.connect(g);g.connect(actx.destination);
+    o.type=type||'square';o.frequency.value=f;g.gain.value=vol||0.03;
+    o.start();o.stop(actx.currentTime+d);
+  }catch(e){}
+}
+let p,enemies,items,magics,frame,score,cam,state,keys,shake,spawned,gateIdx,comboT;
+const GATES=[
+  {x:600, list:[['spider',3]]},
+  {x:1500,list:[['spider',2],['skeleton',2]]},
+  {x:2500,list:[['skeleton',3],['spider',2]]},
+  {x:3400,list:[['spider',3],['skeleton',3]]},
+];
+function reset(){
+  p={x:80,y:360,dir:1,hp:100,maxhp:100,mp:100,maxmp:100,atkT:0,combo:0,comboT:0,hurtT:0,invT:0,zy:0,vz:0,onG:true,staff:true,magic:'thunder'};
+  enemies=[];items=[];magics=[];
+  frame=0;score=0;cam=0;shake=0;gateIdx=0;spawned=false;
+  keys={};
+  state='play';upd();msgEl.textContent='西行之路 · 妖魔挡道';
+  setTimeout(()=>{if(msgEl.textContent.includes('西行'))msgEl.textContent=''},2000);
+}
+function upd(){
+  scEl.textContent=score;
+  const hseg=Math.ceil(p.hp/p.maxhp*10),mseg=Math.ceil(p.mp/p.maxmp*10);
+  hpEl.textContent='█'.repeat(Math.max(0,hseg))+'░'.repeat(10-hseg);
+  mpEl.textContent='█'.repeat(Math.max(0,mseg))+'░'.repeat(10-mseg);
+}
+function mkEnemy(type,x){
+  const base={x,y:YMIN+Math.random()*(YMAX-YMIN),dir:-1,hurtT:0,atkT:0,downT:0};
+  if(type==='spider')return{...base,type,hp:28,sp:1.35,dmg:8,score:300,r:11,name:'蜘蛛精'};
+  if(type==='skeleton')return{...base,type,hp:60,sp:0.9,dmg:14,score:700,r:14,big:true,name:'白骨精'};
+  return{...base,type:'boss',hp:340,sp:0.95,dmg:18,score:8000,r:18,boss:true,name:'牛魔王'};
+}
+function gameOver(){state='over';msgEl.textContent='GAME OVER';btn.textContent='再来一局 (Enter)'}
+function victory(){state='win';msgEl.textContent='降服牛魔王 · 继续西行!';btn.textContent='再玩一次 (Enter)';
+  beep(600,0.2);setTimeout(()=>beep(800,0.2),220);setTimeout(()=>beep(1100,0.5),440)}
+function killP(){
+  if(p.invT>0||state!=='play')return;
+  p.hurtT=26;beep(90,0.35,'sawtooth',0.07);
+  p.hp=p.maxhp;p.invT=140;p.x=Math.max(cam+40,p.x-120);upd();
+  score=Math.max(0,score-500);upd();
+}
+function update(){
+  frame++;
+  if(shake>0)shake--;
+  if(p.hurtT<=0&&p.atkT<=0){
+    if(keys.ArrowLeft)p.x-=2.4,p.dir=-1;
+    if(keys.ArrowRight)p.x+=2.4,p.dir=1;
+    if(keys.ArrowUp)p.y-=1.5;
+    if(keys.ArrowDown)p.y+=1.5;
+  }
+  p.x=Math.max(cam+14,Math.min(LEVEL-14,p.x));
+  p.y=Math.max(YMIN,Math.min(YMAX,p.y));
+  if(keys.Space&&p.onG&&p.hurtT<=0){p.vz=-10;p.onG=false;beep(320,0.08,'sine',0.02)} // 筋斗云
+  if(!p.onG){p.vz+=0.45;p.zy+=p.vz;if(p.zy>=0){p.zy=0;p.onG=true}}
+  // 法术
+  if(keys.x&&p.mp>=25&&p.hurtT<=0){keys.x=false;cast('thunder')}
+  if(keys.c&&p.mp>=35&&p.hurtT<=0){keys.c=false;cast('fire')}
+  // 棍击
+  if(keys.z&&p.atkT<=0&&p.hurtT<=0){
+    p.atkT=14;p.combo=(frame-p.comboT<48?p.combo:0)+1;p.comboT=frame;
+    beep(p.combo===3?240:640,0.05,'square',0.02);
+  }
+  if(p.atkT>0){
+    p.atkT--;
+    const prog=14-p.atkT;
+    if(prog>=3&&prog<=10&&!p.hitDone){
+      const dmg=p.combo===3?26:9,reach=p.combo===3?50:38;
+      for(const e of enemies){
+        if(e.hp<=0)continue;
+        const dx=(e.x-p.x)*p.dir;
+        if(dx>-8&&dx<reach&&Math.abs(e.y-p.y)<20){hurtEnemy(e,dmg,p.combo===3);p.hitDone=true;break}
+      }
+    }
+    if(p.atkT===0)p.hitDone=false;
+  }
+  if(p.hurtT>0){p.hurtT--;p.x-=p.dir*0.9}
+  if(p.invT>0)p.invT--;
+  if(p.x-cam>W*0.6)cam=p.x-W*0.6;
+  if(p.x-cam<W*0.3)cam=p.x-W*0.3;
+  cam=Math.max(0,Math.min(LEVEL-W,cam));
+  // 法术实体
+  for(const m of magics){
+    m.t--;
+    if(m.kind==='thunder'){
+      if(m.t===20){
+        beep(1500,0.3,'sawtooth',0.07);
+        for(const e of enemies){
+          if(e.hp<=0)continue;
+          if(Math.abs(e.x-m.x)<70&&Math.abs(e.y-m.y)<40){hurtEnemy(e,35,true)}
+        }
+        shake=10;
+      }
+    }else{ // fire 前进火墙
+      m.x+=m.vx;
+      for(const e of enemies){
+        if(e.hp<=0)continue;
+        if(Math.abs(e.x-m.x)<26&&Math.abs(e.y-m.y)<26)hurtEnemy(e,20,false);
+      }
+      if(Math.abs(m.x-cam-W/2)>W)m.dead=true;
+    }
+  }
+  magics=magics.filter(m=>m.t>0&&!m.dead);
+  // 刷兵
+  if(gateIdx<GATES.length){
+    const g=GATES[gateIdx];
+    if(!spawned&&p.x>g.x-350&&enemies.length===0){
+      g.list.forEach(([t,n])=>{for(let i=0;i<n;i++)enemies.push(mkEnemy(t,cam+W+50+i*44))});
+      spawned=true;msgEl.textContent='妖魔来袭!';
+    }
+    if(spawned&&enemies.length===0){gateIdx++;spawned=false;msgEl.textContent=''}
+  }else if(enemies.length===0&&!p.bossSpawned){
+    if(p.x>LEVEL-800){
+      enemies.push(mkEnemy('boss',cam+W+80));
+      p.bossSpawned=true;msgEl.textContent='牛魔王 袭来!';
+      beep(100,0.8,'sawtooth',0.09);
+    }
+  }else if(p.bossSpawned&&enemies.length===0&&!p.winFlag){p.winFlag=true;setTimeout(victory,700)}
+  // 敌AI
+  for(const e of enemies){
+    if(e.hp<=0)continue;
+    if(e.downT>0){e.downT--;continue}
+    if(e.hurtT>0){e.hurtT--;e.x-=e.dir*2;continue}
+    const dx=p.x-e.x,dy=p.y-e.y,L=Math.hypot(dx,dy);
+    e.dir=Math.sign(dx)||-1;
+    if(L>e.r+18){
+      e.x+=dx/L*e.sp;e.y+=dy/L*e.sp*0.6;
+      if(e.boss&&L<200&&Math.random()<0.02)e.chargeT=28;
+      if(e.chargeT>0){e.chargeT--;e.x+=e.dir*3.4;
+        if(L<e.r+14&&p.invT<=0&&p.hurtT<=0){p.hurtT=26;p.hp-=e.dmg;upd();beep(140,0.25,'sawtooth',0.07);shake=12;if(p.hp<=0)killP()}
+        continue;}
+    }else{
+      e.atkT--;
+      if(e.atkT<=0){
+        e.atkT=e.boss?55:88;
+        if(p.invT<=0&&p.hurtT<=0){
+          p.hurtT=22;p.hp-=e.dmg;upd();
+          beep(150,0.2,'sawtooth',0.05);shake=8;
+          if(p.hp<=0)killP();
+        }
+      }
+    }
+    e.x=Math.max(cam-40,Math.min(LEVEL,e.x));
+    e.y=Math.max(YMIN,Math.min(YMAX,e.y));
+  }
+  enemies=enemies.filter(e=>e.hp>0);
+  // 物品
+  for(const it of items){
+    if(Math.abs(it.x-p.x)<20&&Math.abs(it.y-p.y)<16){
+      it.dead=true;
+      if(it.kind==='gourd'){p.mp=Math.min(p.maxmp,p.mp+50);msgEl.textContent='葫芦! 法力恢复';upd()}
+      else if(it.kind==='peach'){p.hp=Math.min(p.maxhp,p.hp+40);msgEl.textContent='蟠桃! 体力恢复';upd()}
+      else{score+=600;upd()}
+      beep(900,0.12,'sine',0.05);
+      setTimeout(()=>{if(msgEl.textContent.includes('恢复'))msgEl.textContent=''},1200);
+    }
+  }
+  items=items.filter(i=>!i.dead);
+}
+function cast(kind){
+  p.mp-=(kind==='thunder'?25:35);upd();
+  beep(500,0.1,'sine',0.04);
+  if(kind==='thunder'){
+    magics.push({x:p.x+p.dir*60,y:p.y,t:22,kind});
+  }else{
+    magics.push({x:p.x+p.dir*20,y:p.y-14,t:60,kind,vx:p.dir*5});
+    beep(300,0.3,'sawtooth',0.06);
+  }
+}
+function hurtEnemy(e,dmg,knock){
+  e.hp-=dmg;e.hurtT=knock?24:13;
+  beep(190,0.08,'sawtooth',0.04);
+  if(e.hp<=0){
+    score+=e.score;upd();
+    if(e.boss){shake=40;msgEl.textContent='牛魔王 被降服!';
+      setTimeout(()=>{enemies=enemies.filter(x=>x!==e)},900)}
+    else if(Math.random()<0.32){
+      items.push({x:e.x,y:e.y,kind:Math.random()<0.5?'gourd':'peach'});
+    }
+  }else if(knock)e.downT=22;
+}
+function draw(){
+  if(shake>0)cx.save(),cx.translate((Math.random()-0.5)*5,(Math.random()-0.5)*5);
+  const zone=cam>LEVEL-1500;
+  // 火焰山区域变红
+  const g=cx.createLinearGradient(0,0,0,H);
+  if(zone){g.addColorStop(0,'#3a0f0a');g.addColorStop(0.6,'#7a2a10');g.addColorStop(1,'#a04a18')}
+  else{g.addColorStop(0,'#1a2a1a');g.addColorStop(0.6,'#3a4a28');g.addColorStop(1,'#5a5a30')}
+  cx.fillStyle=g;cx.fillRect(0,0,W,H);
+  // 远山
+  cx.fillStyle=zone?'#4a1a10':'#243a20';
+  for(let i=0;i<8;i++){
+    const mx=((i*330-cam*0.28)%(W+330)+W+330)%(W+330)-165;
+    cx.beginPath();cx.moveTo(mx-170,YMIN);cx.lineTo(mx,YMIN-95-(i%3)*35);cx.lineTo(mx+170,YMIN);cx.fill();
+  }
+  if(zone){ // 火焰
+    for(let x=100;x<LEVEL;x+=160){
+      const sx=x-cam*0.9;
+      if(sx<-40||sx>W+40)continue;
+      for(let f=0;f<3;f++){
+        const fh=18+Math.sin(frame*0.2+x+f*2)*8;
+        cx.fillStyle=f?'rgba(255,140,30,.7)':'rgba(255,220,80,.8)';
+        cx.beginPath();
+        cx.moveTo(sx-8+f*8,YMIN);
+        cx.quadraticCurveTo(sx-8+f*8+8,YMIN-fh,sx+8+f*8,YMIN);
+        cx.fill();
+      }
+    }
+  }
+  // 地面
+  cx.fillStyle=zone?'#7a3a1a':'#4a5a30';cx.fillRect(0,YMIN,W,H-YMIN);
+  cx.fillStyle=zone?'#6a3018':'#3e4c28';cx.fillRect(0,YMAX+8,W,H-YMAX-8);
+  const ents=[];
+  for(const e of enemies)if(e.hp>0)ents.push({y:e.y,d:()=>drawEnemy(e)});
+  for(const it of items)ents.push({y:it.y,d:()=>drawItem(it)});
+  ents.push({y:p.y,d:drawPlayer});
+  ents.sort((a,b)=>a.y-b.y).forEach(o=>o.d());
+  // 法术特效
+  for(const m of magics){
+    const sx=m.x-cam;
+    if(m.kind==='thunder'&&m.t<22){
+      cx.strokeStyle=m.t%4<2?'#8ef':'#fff';cx.lineWidth=3;
+      cx.beginPath();
+      let ty=0,xx=sx+(Math.random()-0.5)*8;
+      cx.moveTo(xx,ty);
+      while(ty<m.y){ty+=30;xx+=(Math.random()-0.5)*30;cx.lineTo(xx,ty)}
+      cx.stroke();cx.lineWidth=1;
+      cx.fillStyle='rgba(160,220,255,.25)';
+      cx.beginPath();cx.ellipse(sx,m.y,70,30,0,0,7);cx.fill();
+    }else if(m.kind==='fire'){
+      for(let f=-1;f<=1;f++){
+        const fh=16+Math.sin(frame*0.3+f*2)*6;
+        cx.fillStyle='rgba(255,120,20,.85)';
+        cx.beginPath();
+        cx.moveTo(sx-12,f?m.y+8*f:m.y);
+        cx.quadraticCurveTo(sx+Math.sin(frame*0.4+f)*8,m.y-14-fh,sx+12,m.y+8*f);
+        cx.fill();
+      }
+    }
+  }
+  // 敌血条
+  let bi=0;
+  for(const e of enemies){
+    if(e.hp<=0||bi>=3)continue;bi++;
+    const bw=150,maxhp=e.boss?340:e.big?60:28;
+    cx.fillStyle='#200';cx.fillRect(W-bw-14,14+(bi-1)*15,bw,9);
+    cx.fillStyle=e.boss?'#f80':'#c6f';
+    cx.fillRect(W-bw-14,14+(bi-1)*15,bw*e.hp/maxhp,9);
+    cx.fillStyle='#fed';cx.font='10px "KaiTi",serif';
+    cx.fillText(e.name,W-bw-14,10+(bi-1)*15);
+  }
+  if(shake>0)cx.restore();
+  if(state==='over'||state==='win'){
+    cx.fillStyle='rgba(0,0,0,.6)';cx.fillRect(0,150,W,100);
+    cx.fillStyle=state==='win'?'#fd5':'#f44';
+    cx.font='bold 34px "KaiTi",serif';cx.textAlign='center';
+    cx.fillText(state==='win'?'修 行 圆 满':'败 北',W/2,205);
+    cx.fillStyle='#fff';cx.font='15px serif';
+    cx.fillText('得分 '+score,W/2,232);
+  }
+}
+function drawPlayer(){
+  const sx=p.x-cam,sy=p.y+p.zy;
+  if(p.invT>0&&p.invT%8<4)cx.globalAlpha=0.35;
+  cx.fillStyle='rgba(0,0,0,.3)';
+  cx.beginPath();cx.ellipse(p.x-cam,p.y+5,13,4,0,0,7);cx.fill();
+  if(!p.onG){ // 筋斗云
+    cx.fillStyle='rgba(255,255,255,.75)';
+    cx.beginPath();cx.ellipse(sx,sy+8,18,7,0,0,7);cx.fill();
+  }
+  const walk=p.atkT<=0&&p.hurtT<=0;
+  const lo=walk?Math.sin(frame*0.35)*4:0;
+  cx.fillStyle='#8a5a2a'; // 虎皮裙
+  cx.fillRect(sx-6+lo,sy-10,5,10);cx.fillRect(sx+1-lo,sy-10,5,10);
+  cx.fillStyle='#e8a020';cx.fillRect(sx-8,sy-24,16,12); // 上身
+  cx.fillStyle='#c8830a';cx.fillRect(sx-8,sy-14,16,4);
+  cx.fillStyle='#e8c39e';
+  cx.beginPath();cx.arc(sx,sy-34,6,0,7);cx.fill(); // 脸
+  cx.fillStyle='#8a4a1a'; // 毛发
+  cx.fillRect(sx-6,sy-40,12,5);
+  cx.beginPath();cx.arc(sx+p.dir*8,sy-36,2.5,0,7);cx.fill(); // 嘴凸
+  cx.fillStyle='#111';
+  cx.fillRect(sx+p.dir*3,sy-37,2,2);
+  // 金箍棒
+  cx.save();cx.translate(sx,sy-24);
+  if(p.atkT>0){
+    const pr=(14-p.atkT)/14;
+    cx.rotate(p.dir*(pr<0.5?-1.8+pr*3.8:1.2));
+  }else cx.rotate(p.dir*0.6);
+  cx.fillStyle='#c8a030';
+  cx.fillRect(0,-2.5,p.dir*46,5);
+  cx.fillStyle='#8a6a1a';
+  cx.fillRect(p.dir*4,-2.5,p.dir*4,5);cx.fillRect(p.dir*40,-2.5,p.dir*4,5);
+  cx.restore();
+  cx.globalAlpha=1;
+}
+function drawEnemy(e){
+  const sx=e.x-cam,sy=e.y;
+  cx.fillStyle='rgba(0,0,0,.3)';
+  cx.beginPath();cx.ellipse(sx,sy+5,e.r,4,0,0,7);cx.fill();
+  const down=e.downT>0||e.hurtT>0;
+  if(down)cx.save(),cx.translate(sx,sy),cx.rotate(1.1),cx.translate(-sx,-sy);
+  if(e.type==='spider'){
+    cx.fillStyle='#5a3a6a';
+    cx.beginPath();cx.ellipse(sx,sy-12,10,9,0,0,7);cx.fill();
+    cx.strokeStyle='#3a2a4a';cx.lineWidth=2;
+    for(let l=0;l<4;l++){
+      const lw=Math.sin(frame*0.2+l)*3;
+      cx.beginPath();cx.moveTo(sx,sy-10);
+      cx.lineTo(sx-14+l*8,sy-18+lw);cx.stroke();
+      cx.beginPath();cx.moveTo(sx,sy-10);
+      cx.lineTo(sx+14-l*8,sy-18-lw);cx.stroke();
+    }
+    cx.lineWidth=1;
+    cx.fillStyle='#e8c39e';
+    cx.beginPath();cx.arc(sx,sy-24,4.5,0,7);cx.fill();
+    cx.fillStyle='#8a4a8a';cx.fillRect(sx-5,sy-28,10,3);
+  }else{
+    const bs=e.boss?1.45:1.2;
+    cx.fillStyle='#222';
+    cx.fillRect(sx-5*bs,sy-10,4*bs,10);cx.fillRect(sx+1,sy-10,4*bs,10);
+    cx.fillStyle=e.boss?'#7a3a2a':'#4a4a5a';
+    cx.fillRect(sx-8*bs,sy-30*bs,16*bs,20*bs);
+    if(e.boss){ // 牛角
+      cx.strokeStyle='#e8e0c0';cx.lineWidth=3;
+      cx.beginPath();cx.arc(sx-9,sy-40,6,-2.5,-0.5);cx.stroke();
+      cx.beginPath();cx.arc(sx+9,sy-40,6,Math.PI+0.5,Math.PI+2.5);cx.stroke();
+      cx.lineWidth=1;
+    }
+    cx.fillStyle=e.boss?'#e8b088':'#d8e0d0';
+    cx.beginPath();cx.arc(sx,sy-35*bs,5.5*bs,0,7);cx.fill();
+    cx.fillStyle=e.boss?'#422':'#345';
+    cx.fillRect(sx-6*bs,sy-40*bs,12*bs,4*bs);
+    // 武器
+    cx.fillStyle='#888';
+    if(e.boss){cx.fillRect(sx+e.dir*5,sy-26,e.dir*26,5)}
+    else cx.fillRect(sx+e.dir*6,sy-22,e.dir*20,3);
+  }
+  if(down)cx.restore();
+}
+function drawItem(it){
+  const sx=it.x-cam,sy=it.y,bob=Math.sin(frame*0.1)*2;
+  if(sx<-20||sx>W+20)return;
+  if(it.kind==='gourd'){
+    cx.fillStyle='#b8792a';
+    cx.beginPath();cx.arc(sx,sy-10+bob,5,0,7);cx.fill();
+    cx.beginPath();cx.arc(sx,sy-16+bob,3.5,0,7);cx.fill();
+  }else{
+    cx.fillStyle='#f8a0b8';
+    cx.beginPath();cx.arc(sx,sy-7+bob,6,0,7);cx.fill();
+    cx.fillStyle='#5a8a3a';cx.fillRect(sx-1,sy-14+bob,2,4);
+  }
+}
+document.addEventListener('keydown',e=>{
+  if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown',' ','z','x','c','Z','X','C'].includes(e.key))e.preventDefault();
+  if(e.key==='ArrowLeft')keys.ArrowLeft=true;
+  if(e.key==='ArrowRight')keys.ArrowRight=true;
+  if(e.key==='ArrowUp')keys.ArrowUp=true;
+  if(e.key==='ArrowDown')keys.ArrowDown=true;
+  if(e.key==='z'||e.key==='Z')keys.z=true;
+  if(e.key==='x'||e.key==='X')keys.x=true;
+  if(e.key==='c'||e.key==='C')keys.c=true;
+  if(e.key===' ')keys.Space=true;
+  if(e.key==='Enter'&&state!=='play'){reset();btn.textContent='重开 (Enter)'}
+});
+document.addEventListener('keyup',e=>{
+  if(e.key==='ArrowLeft')keys.ArrowLeft=false;
+  if(e.key==='ArrowRight')keys.ArrowRight=false;
+  if(e.key==='ArrowUp')keys.ArrowUp=false;
+  if(e.key==='ArrowDown')keys.ArrowDown=false;
+  if(e.key==='z'||e.key==='Z')keys.z=false;
+  if(e.key==='x'||e.key==='X')keys.x=false;
+  if(e.key==='c'||e.key==='C')keys.c=false;
+  if(e.key===' ')keys.Space=false;
+});
+btn.onclick=()=>{if(state!=='play'){reset();btn.textContent='重开 (Enter)'}};
+if('ontouchstart' in window){
+  const tp=document.createElement('div');
+  tp.style.cssText='position:fixed;bottom:8px;left:0;right:0;text-align:center';
+  [['←',()=>keys.ArrowLeft=true,()=>keys.ArrowLeft=false],['→',()=>keys.ArrowRight=true,()=>keys.ArrowRight=false],['Z',()=>keys.z=true,()=>keys.z=false],['⚡',()=>cast('thunder'),null],['🔥',()=>cast('fire'),null],['云',()=>keys.Space=true,()=>keys.Space=false]].forEach(([k,dn,up])=>{
+    const b=document.createElement('button');
+    b.textContent=k;b.style.cssText='width:50px;height:48px;font-size:16px;margin:0 3px;background:#8a6a1a';
+    b.addEventListener('pointerdown',e=>{e.preventDefault();dn()});
+    if(up)b.addEventListener('pointerup',up);
+    tp.appendChild(b);
+  });
+  document.body.appendChild(tp);
+}
+reset();
+function loop(){requestAnimationFrame(loop);if(state==='play')update();draw()}
+loop();
+</script>
+</body>
+</html>

@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>街头霸王II · STREET FIGHTER II</title>
+<style>
+html,body{margin:0;background:#180a08;color:#ffe;font-family:"Segoe UI",system-ui,sans-serif;height:100%;display:flex;align-items:center;justify-content:center;touch-action:none;user-select:none}
+#box{text-align:center}
+canvas{border:3px solid #a0522d;background:#000;touch-action:none}
+#hud{font-size:13px;color:#dc9;margin:6px 0}
+#msg{font-size:16px;color:#f40;height:22px}
+#tip{font-size:11px;color:#766;margin-top:4px;max-width:680px}
+button{background:#a0522d;border:0;color:#fff;padding:6px 16px;cursor:pointer;margin-top:4px}
+</style>
+</head>
+<body>
+<div id="box">
+  <div id="hud">隆 <span id="hp1" style="color:#ff4">██████████</span>　VS　<span id="hp2" style="color:#f84">██████████</span> 豪鬼　⏱<span id="tm">99</span></div>
+  <canvas id="cv" width="640" height="400"></canvas>
+  <div id="msg">按 开始 或 Enter</div>
+  <button id="btn">开始 (Enter)</button>
+  <div id="tip">A/D 移动 · W 跳 · S 蹲 · J 轻·K重 · L 升龙拳 · ↓→+J/K 波动拳 · ↓←+K 扫堂腿 · 击倒豪鬼!</div>
+</div>
+<script>
+'use strict';
+const cv=document.getElementById('cv'),cx=cv.getContext('2d');
+const hp1El=document.getElementById('hp1'),hp2El=document.getElementById('hp2'),tmEl=document.getElementById('tm'),msgEl=document.getElementById('msg'),btn=document.getElementById('btn');
+const W=640,H=400,GY=352;
+let actx=null;
+function beep(f,d,type,vol){
+  try{
+    if(!actx)actx=new(window.AudioContext||window.webkitAudioContext)();
+    const o=actx.createOscillator(),g=actx.createGain();
+    o.connect(g);g.connect(actx.destination);
+    o.type=type||'square';o.frequency.value=f;g.gain.value=vol||0.035;
+    o.start();o.stop(actx.currentTime+d);
+  }catch(e){}
+}
+let p1,p2,fx,frame,timeLeft,state,keys,roundMsg,shake;
+const SFX={
+  hit(){beep(200,0.12,'sawtooth',0.06)},
+  heavy(){beep(140,0.18,'sawtooth',0.08)},
+  block(){beep(700,0.05,'square',0.03)},
+  fire(){beep(900,0.25,'sine',0.06)},
+  jump(){beep(320,0.1,'sine',0.03)},
+  ko(){beep(80,0.8,'sawtooth',0.1)}
+};
+function reset(){
+  p1=mkFighter('ryu',120);
+  p2=mkFighter('akuma',420);
+  p2.ai=true;p2.hp=p2.maxhp=100;
+  fx=[];frame=0;timeLeft=99;shake=0;
+  keys={};
+  roundMsg='ROUND 1 · FIGHT!';
+  setTimeout(()=>{if(roundMsg&&roundMsg.includes('ROUND'))roundMsg=''},1400);
+  state='play';upd();
+}
+function mkFighter(who,x){
+  return{who,x,y:GY,vy:0,dir:who==='ryu'?1:-1,hp:100,maxhp:100,
+    state:'idle',stT:0,crouch:false,onG:true,
+    atkT:0,atkKind:null,hitDone:false,hurtT:0,invT:0,
+    inputBuf:[],bufT:0,aiT:0,aiMove:0};
+}
+function upd(){
+  const seg1=Math.ceil(p1.hp/p1.maxhp*10),seg2=Math.ceil(p2.hp/p2.maxhp*10);
+  hp1El.textContent='█'.repeat(Math.max(0,seg1))+'░'.repeat(10-seg1);
+  hp2El.textContent='█'.repeat(Math.max(0,seg2))+'░'.repeat(10-seg2);
+}
+function gameOver(win){
+  state='over';
+  roundMsg=win?'K.O.! 隆 获胜!':'K.O.! 豪鬼 获胜...';
+  SFX.ko();
+  btn.textContent='再来一局 (Enter)';
+}
+function pushInput(f,key){
+  f.inputBuf.push({k:key,t:frame});
+  if(f.inputBuf.length>12)f.inputBuf.shift();
+}
+function detectSpecial(f,foe){
+  // ↓→+P = 波动拳
+  const recent=f.inputBuf.filter(i=>frame-i.t<20);
+  const hasDown=recent.some(i=>i.k==='down');
+  const hasFwd=recent.some(i=>i.k==='fwd');
+  const hasP=recent.some(i=>i.k==='p');
+  if(hasDown&&hasFwd&&hasP){
+    f.inputBuf=[];
+    return f.who==='ryu'?'hadoken':'gouhadoken';
+  }
+  // ↓←+K = 扫堂腿
+  if(hasDown&&recent.some(i=>i.k==='back')&&recent.some(i=>i.k==='k')){
+    f.inputBuf=[];
+    return 'sweep';
+  }
+  return null;
+}
+function startAttack(f,kind){
+  f.state='attack';f.atkKind=kind;f.atkT=kind==='hadoken'||kind==='gouhadoken'?30:kind==='shoryu'?26:kind==='sweep'?22:14;
+  f.hitDone=false;
+  if(kind==='shoryu'&&!f.onG)return;
+  if(kind==='shoryu'){f.vy=-9;f.onG=false}
+  const snd={hadoken:SFX.fire,shoryu:SFX.jump,sweep:SFX.jump}[kind];
+  snd&&snd();
+}
+function tryAttack(f,foe,btn2){
+  if(f.atkT>0||f.hurtT>0)return;
+  const special=detectSpecial(f,foe);
+  if(special){startAttack(f,special);return}
+  if(btn2==='p'){startAttack(f,'light')}
+  if(btn2==='k'){startAttack(f,f.onG?'heavy':'jumpkick')}
+}
+function hitCheck(f,foe,dmg,reach,kind){
+  if(f.hitDone)return;
+  const dx=(foe.x-f.x)*f.dir;
+  if(dx>-12&&dx<reach&&Math.abs(foe.y-f.y)<50){
+    // 防御判定：对方后键+非攻击
+    const foeBlocking=foe.onG&&foe.hurtT<=0&&(foe.dir===-f.dir)&&
+      ((foe===p1&&(keys.a||foe.crouch))||(foe===p2&&(foe.aiBlock||foe.crouch)));
+    if(foeBlocking&&kind!=='throw'){
+      foe.hp-=dmg*0.15;SFX.block();
+      foe.hurtT=6;
+      fx.push({kind:'block',x:foe.x-f.dir*10,y:foe.y-30,t:12});
+    }else{
+      foe.hp-=dmg;
+      foe.hurtT=kind==='shoryu'?34:20;
+      foe.x+=f.dir*6;
+      SFX.hit();
+      fx.push({kind:'hit',x:foe.x,y:foe.y-34,t:16,big:dmg>10});
+      shake=dmg>10?8:4;
+    }
+    f.hitDone=true;
+    upd();
+  }
+}
+function update(){
+  frame++;
+  if(shake>0)shake--;
+  // 计时
+  if(frame%60===0&&timeLeft>0){timeLeft--;tmEl.textContent=timeLeft;
+    if(timeLeft===0){
+      gameOver(p1.hp/p1.maxhp>=p2.hp/p2.maxhp);
+      return;
+    }}
+  const f1=p1,f2=p2;
+  // 面向
+  if(f1.onG&&f1.atkT<=0&&f1.hurtT<=0)f1.dir=f2.x>f1.x?1:-1;
+  if(f2.onG&&f2.atkT<=0&&f2.hurtT<=0)f2.dir=f1.x>f2.x?1:-1;
+  // ---- 玩家输入 ----
+  if(f1.hurtT<=0){
+    f1.crouch=keys.s&&f1.onG;
+    const spd=f1.crouch?0:2.6;
+    if(keys.a&&f1.atkT<=0){f1.x-=spd;pushInput(f1,'back')}
+    if(keys.d&&f1.atkT<=0){f1.x+=spd;pushInput(f1,'fwd')}
+    if(keys.w&&f1.onG&&f1.atkT<=0){f1.vy=-11;f1.onG=false;SFX.jump()}
+    if(keys.s)f1.state='crouch';
+    if(keys.j){if(frame%1===0){pushInput(f1,'p');tryAttack(f1,f2,'p');keys.j=false}}
+    if(keys.k){pushInput(f1,'k');tryAttack(f1,f2,'k');keys.k=false}
+    if(keys.l&&f1.onG&&f1.atkT<=0){startAttack(f1,'shoryu');keys.l=false}
+  }
+  // ---- AI ----
+  if(f2.ai&&f2.hurtT<=0){
+    f2.aiT--;
+    const dx=f1.x-f2.x,ad=Math.abs(dx);
+    if(f2.aiT<=0){
+      f2.aiT=20+Math.random()*30;
+      f2.aiBlock=Math.random()<0.3;
+      const r=Math.random();
+      if(ad>150)f2.aiMove=dx>0?1:-1;
+      else if(ad<70)f2.aiMove=r<0.6?-1:0;
+      else f2.aiMove=r<0.4?(dx>0?1:-1):r<0.7?0:2;
+      if(r>0.75&&ad<90)tryAttack(f2,f1,'p');
+      else if(r>0.6&&ad<120)tryAttack(f2,f1,'k');
+      else if(r>0.55){ // 偶尔搓波动拳
+        pushInput(f2,'down');pushInput(f2,'fwd');pushInput(f2,'p');
+        tryAttack(f2,f1,'p');
+      }
+    }
+    if(f2.aiMove===1)f2.x+=2.2;
+    else if(f2.aiMove===-1)f2.x-=2.2;
+    if(f2.aiMove===2&&f2.onG){f2.vy=-11;f2.onG=false}
+  }
+  // ---- 物理 ----
+  for(const f of[f1,f2]){
+    if(!f.onG){f.vy+=0.55;f.y+=f.vy;if(f.y>=GY){f.y=GY;f.onG=true}}
+    if(f.atkT>0){
+      f.atkT--;
+      const k=f.atkKind;
+      const prog={light:[2,7],heavy:[3,9],jumpkick:[2,12],shoryu:[4,16],sweep:[4,12],hadoken:[24,24],gouhadoken:[24,24]}[k];
+      if(k==='hadoken'||k==='gouhadoken'){
+        if(f.atkT===6){
+          fx.push({kind:'fireball',x:f.x+f.dir*30,y:f.y-30,vx:f.dir*5.5,t:90,owner:f,dmg:f.who==='ryu'?14:18});
+          beep(1200,0.3,'sine',0.05);
+        }
+      }else if(prog&&f.hitDone===false){
+        const dmgMap={light:7,heavy:13,jumpkick:11,shoryu:20,sweep:9};
+        hitCheck(f,f2===f?f1:f2,dmgMap[k],k==='jumpkick'?30:k==='shoryu'?34:k==='sweep'?40:30,k);
+      }
+      if(f.atkT===0){f.state='idle';f.atkKind=null}
+    }
+    if(f.hurtT>0)f.hurtT--;
+    if(f.invT>0)f.invT--;
+  }
+  // 推挤
+  const ov=52-Math.abs(f1.x-f2.x);
+  if(ov>0){
+    const s=Math.sign(f1.x-f2.x)||1;
+    f1.x+=s*ov/2*0.5;f2.x-=s*ov/2*0.5;
+  }
+  f1.x=Math.max(30,Math.min(W-30,f1.x));
+  f2.x=Math.max(30,Math.min(W-30,f2.x));
+  // fireball 碰撞
+  for(const fb of fx){
+    if(fb.kind!=='fireball')continue;
+    fb.x+=fb.vx;fb.t--;
+    const foe=fb.owner===f1?f2:f1, self=fb.owner;
+    if(Math.abs(fb.x-foe.x)<26&&Math.abs(fb.y-(foe.y-30))<40){
+      const foeBlocking=foe.onG&&(foe.dir===-Math.sign(fb.vx)||foe.crouch);
+      if(foeBlocking){foe.hp-=fb.dmg*0.2;SFX.block();fb.t=0}
+      else{foe.hp-=fb.dmg;foe.hurtT=26;SFX.hit();shake=8;fb.t=0;
+        fx.push({kind:'hit',x:foe.x,y:foe.y-34,t:16,big:true})}
+      upd();
+    }
+    if(fb.x<-40||fb.x>W+40)fb.t=0;
+  }
+  // KO
+  if(f1.hp<=0||f2.hp<=0){
+    f1.hp=Math.max(0,f1.hp);f2.hp=Math.max(0,f2.hp);
+    gameOver(f2.hp<=0);
+  }
+  // 特效寿命
+  for(const e of fx)e.t--;
+  fx=fx.filter(e=>e.t>0);
+}
+function draw(){
+  if(shake>0)cx.save(),cx.translate((Math.random()-0.5)*6,(Math.random()-0.5)*6);
+  // 背景：神社黄昏
+  const g=cx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,'#401810');g.addColorStop(0.7,'#a04a20');g.addColorStop(1,'#c86a30');
+  cx.fillStyle=g;cx.fillRect(0,0,W,H);
+  // 太阳
+  cx.fillStyle='#f8d080';
+  cx.beginPath();cx.arc(W/2,140,46,0,7);cx.fill();
+  // 神社
+  cx.fillStyle='#3a1a10';
+  cx.fillRect(80,180,120,12);cx.fillRect(70,168,140,10);
+  cx.fillStyle='#2a1208';
+  cx.fillRect(100,192,14,60);cx.fillRect(166,192,14,60);
+  // 竹林
+  for(let i=0;i<12;i++){
+    const bx=(i*97+40)%W;
+    cx.fillStyle='#2a4a1a';
+    cx.fillRect(bx,160,6,192);
+  }
+  // 地面
+  cx.fillStyle='#8a5a28';cx.fillRect(0,GY,W,H-GY);
+  cx.fillStyle='#6a441c';cx.fillRect(0,GY,W,6);
+  // 火球
+  for(const fb of fx){
+    if(fb.kind!=='fireball')continue;
+    cx.fillStyle='#8ef';
+    cx.beginPath();cx.arc(fb.x,fb.y,14,0,7);cx.fill();
+    cx.fillStyle='#fff';
+    cx.beginPath();cx.arc(fb.x+fb.vx*2,fb.y,7,0,7);cx.fill();
+  }
+  drawFighter(p1,'#e8b04a','#2a3a6a');
+  drawFighter(p2,'#e8e0d0','#6a1a1a');
+  // 命中火花
+  for(const e of fx){
+    if(e.kind==='hit'){
+      cx.fillStyle=e.big?'#ff8':'#ffd';
+      cx.save();cx.translate(e.x,e.y);
+      for(let i=0;i<6;i++){
+        const a=i*Math.PI/3+e.t*0.2;
+        cx.beginPath();
+        cx.moveTo(Math.cos(a)*6,Math.sin(a)*6);
+        cx.lineTo(Math.cos(a)*(e.big?22:14),Math.sin(a)*(e.big?22:14));
+        cx.lineWidth=3;cx.strokeStyle=e.big?'#f80':'#ff8';cx.stroke();
+      }
+      cx.restore();cx.lineWidth=1;
+    }
+    if(e.kind==='block'){
+      cx.strokeStyle='#8cf';cx.lineWidth=2;
+      cx.beginPath();cx.arc(e.x,e.y,14,0,7);cx.stroke();cx.lineWidth=1;
+    }
+  }
+  // 血条(画布内加强)
+  const drawBar=(x,w,hp,maxhp,col)=>{
+    cx.fillStyle='#200';cx.fillRect(x,26,w,16);
+    cx.fillStyle=col;cx.fillRect(x,26,w*Math.max(0,hp)/maxhp,16);
+    cx.strokeStyle='#000';cx.strokeRect(x,26,w,16);
+  };
+  drawBar(30,260,p1.hp,p1.maxhp,'#4f4');
+  drawBar(W-290,260,p2.hp,p2.maxhp,'#4f4');
+  cx.fillStyle='#fff';cx.font='bold 13px sans-serif';cx.textAlign='left';
+  cx.fillText('RYU',30,22);
+  cx.textAlign='right';cx.fillText('GOUKI',W-30,22);
+  cx.textAlign='center';cx.font='bold 20px monospace';
+  cx.fillText(timeLeft,W/2,40);
+  if(roundMsg){
+    cx.fillStyle='rgba(0,0,0,.45)';cx.fillRect(0,170,W,60);
+    cx.fillStyle='#ff4';cx.font='bold 30px sans-serif';
+    cx.fillText(roundMsg,W/2,208);
+  }
+  if(shake>0)cx.restore();
+}
+function drawFighter(f,skin,cloth){
+  const sx=f.x,sy=f.y+(f.zy||0);
+  cx.fillStyle='rgba(0,0,0,.3)';
+  cx.beginPath();cx.ellipse(f.x,GY+4,16,4,0,0,7);cx.fill();
+  if(f.hurtT>0&&f.hurtT%4<2)cx.globalAlpha=0.6;
+  const h=f.crouch?0.72:1;
+  cx.save();cx.translate(sx,sy);cx.scale(f.dir,1);
+  // 腿
+  cx.fillStyle='#2a2a3a';
+  if(!f.onG){cx.fillRect(-8,-14,8,12);cx.fillRect(2,-10,10,6)}
+  else if(f.atkKind==='sweep'&&f.atkT>0){cx.fillRect(-14,-4,26,5)}
+  else{cx.fillRect(-7,-13*h,6,13*h);cx.fillRect(1,-13*h,6,13*h)}
+  // 腰带
+  cx.fillStyle=f.who==='ryu'?'#1a1a1a':'#8a1a1a';
+  cx.fillRect(-8,-24*h,16,4);
+  // 身体道服
+  cx.fillStyle=f.who==='ryu'?'#e8e4d0':'#2a2a3a';
+  cx.fillRect(-9,-44*h,18,22*h);
+  // 头
+  cx.fillStyle=skin;
+  cx.beginPath();cx.arc(2,-50*h,7,0,7);cx.fill();
+  cx.fillStyle='#1a1a1a';cx.fillRect(-5,-57*h,13,4); // 头发/头带
+  if(f.who==='akuma'){ // 豪鬼念珠
+    cx.fillStyle='#8a6a1a';
+    cx.beginPath();cx.arc(2,-42*h,4,0,7);cx.fill();
+  }
+  // 手臂攻击姿态
+  cx.fillStyle=skin;
+  if(f.atkT>0){
+    const k=f.atkKind;
+    if(k==='light'||k==='heavy'){
+      const ext=Math.sin((1-f.atkT/14)*Math.PI)*22+8;
+      cx.fillRect(6,-40*h,ext,5);
+    }else if(k==='shoryu'){
+      cx.fillRect(4,-70*h,6,26);
+      cx.fillStyle='rgba(255,200,80,.5)';
+      cx.beginPath();cx.arc(7,-72*h,10,0,7);cx.fill();
+    }else if(k==='hadoken'||k==='gouhadoken'){
+      cx.fillStyle='rgba(140,240,255,.7)';
+      cx.beginPath();cx.arc(16,-36*h,9,0,7);cx.fill();
+    }else if(k==='jumpkick'){
+      cx.fillStyle='#2a2a3a';cx.fillRect(2,-16,24,7);
+    }
+  }else{
+    cx.fillRect(5,-38*h,6,14);
+  }
+  cx.restore();
+  cx.globalAlpha=1;
+}
+// 输入
+const KMAP={a:'a',d:'d',w:'w',s:'s',j:'j',k:'k',l:'l'};
+document.addEventListener('keydown',e=>{
+  if(['a','d','w','s','j','k','l',' '].includes(e.key))e.preventDefault();
+  const k=e.key.toLowerCase();
+  if(KMAP[k])keys[k]=true;
+  if(e.key==='Enter'&&state!=='play'){reset();btn.textContent='重开 (Enter)'}
+});
+document.addEventListener('keyup',e=>{
+  const k=e.key.toLowerCase();
+  if(KMAP[k])keys[k]=false;
+});
+btn.onclick=()=>{if(state!=='play'){reset();btn.textContent='重开 (Enter)'}};
+if('ontouchstart' in window){
+  const tp=document.createElement('div');
+  tp.style.cssText='position:fixed;bottom:8px;left:0;right:0;text-align:center';
+  [['◀',()=>keys.a=true,()=>keys.a=false],['▶',()=>keys.d=true,()=>keys.d=false],
+   ['蹲',()=>keys.s=true,()=>keys.s=false],['跳',()=>keys.w=true,()=>keys.w=false],
+   ['拳',()=>keys.j=true,()=>keys.j=false],['脚',()=>keys.k=true,()=>keys.k=false],
+   ['升龙',()=>keys.l=true,()=>keys.l=false]].forEach(([k,dn,up])=>{
+    const b=document.createElement('button');
+    b.textContent=k;b.style.cssText='width:46px;height:46px;font-size:14px;margin:0 2px;background:#a0522d';
+    b.addEventListener('pointerdown',e=>{e.preventDefault();dn()});
+    if(up)b.addEventListener('pointerup',up);
+    tp.appendChild(b);
+  });
+  document.body.appendChild(tp);
+}
+reset();
+function loop(){requestAnimationFrame(loop);if(state==='play')update();draw()}
+loop();
+</script>
+</body>
+</html>

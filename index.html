@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>🎮 经典街机游戏厅 · Arcade</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;background:radial-gradient(ellipse at top,#1a1030,#08060f 70%);color:#eee;font-family:"Segoe UI",system-ui,"Microsoft YaHei",sans-serif;min-height:100%}
+header{text-align:center;padding:34px 16px 10px}
+h1{margin:0;font-size:34px;letter-spacing:4px;
+  background:linear-gradient(90deg,#f6c,#fc6,#6cf,#6f6);-webkit-background-clip:text;background-clip:text;color:transparent;
+  text-shadow:0 0 30px rgba(255,100,200,.35)}
+header p{color:#889;margin:8px 0 0;font-size:13px;letter-spacing:2px}
+nav{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;padding:18px 12px 4px;position:sticky;top:0;background:rgba(8,6,15,.85);backdrop-filter:blur(6px);z-index:5}
+nav a{color:#bcd;text-decoration:none;font-size:13px;padding:6px 14px;border:1px solid #334;border-radius:20px;transition:.2s}
+nav a:hover{border-color:#f6c;color:#fff;background:#f6c22}
+main{max-width:1240px;margin:0 auto;padding:10px 18px 50px}
+h2{font-size:20px;margin:36px 4px 14px;display:flex;align-items:center;gap:10px}
+h2 .en{font-size:11px;color:#667;letter-spacing:3px;font-weight:normal}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(215px,1fr));gap:14px}
+a.card{display:block;text-decoration:none;color:inherit;background:linear-gradient(160deg,#181428,#100c1c);
+  border:1px solid #2a2440;border-radius:12px;padding:16px 15px 13px;position:relative;overflow:hidden;transition:transform .18s,border-color .18s,box-shadow .18s}
+a.card:hover{transform:translateY(-4px);border-color:var(--c);box-shadow:0 8px 30px -8px var(--c)}
+.card .icon{font-size:34px;line-height:1}
+.card h3{margin:10px 0 2px;font-size:16px;color:#fff}
+.card .en{font-size:10px;color:#667;letter-spacing:1.5px}
+.card p{margin:8px 0 0;font-size:12px;color:#99a;line-height:1.55}
+.card .year{position:absolute;top:12px;right:13px;font-size:10px;color:#556;border:1px solid #334;padding:1px 7px;border-radius:10px}
+.card::before{content:'';position:absolute;inset:0 0 auto 0;height:3px;background:var(--c);opacity:.85}
+.badge{display:inline-block;margin-top:9px;font-size:10px;padding:2px 8px;border-radius:10px;background:var(--c);color:#0b0a14;font-weight:bold}
+footer{text-align:center;color:#556;font-size:12px;padding:26px 0 40px;line-height:1.8}
+@media(max-width:640px){h1{font-size:24px}.grid{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}.card p{display:none}}
+</style>
+</head>
+<body>
+<header>
+  <h1>🎮 经典街机游戏厅</h1>
+  <p>CLASSIC ARCADE COLLECTION · 21 GAMES · 纯 HTML5 复刻 · 每个游戏一个文件夹</p>
+</header>
+<nav>
+  <a href="#fight">🕹️ 格斗</a><a href="#shoot">🔫 射击</a><a href="#beat">👊 清版动作</a><a href="#puzzle">🧠 益智</a>
+</nav>
+<main>
+  <h2 id="fight">🕹️ 格斗游戏 <span class="en">FIGHTING</span></h2>
+  <div class="grid">
+    <a class="card" style="--c:#f44" href="street-fighter-2/index.html"><span class="year">1991</span><div class="icon">🥋</div><h3>街头霸王 II</h3><div class="en">STREET FIGHTER II</div><p>波动拳·升龙拳·搓招连招，隆 vs 豪鬼</p><span class="badge">搓招系统</span></a>
+    <a class="card" style="--c:#a6f" href="kof-97/index.html"><span class="year">1997</span><div class="icon">👊</div><h3>拳皇 97</h3><div class="en">THE KING OF FIGHTERS '97</div><p>草薙京 vs 八神庵，三回合制·大蛇薙·跑动</p><span class="badge">街机厅之魂</span></a>
+    <a class="card" style="--c:#f80" href="samurai-shodown-2/index.html"><span class="year">1994</span><div class="icon">⚔️</div><h3>侍魂 2</h3><div class="en">SAMURAI SHODOWN II</div><p>冷兵器一击必杀，怒气满槽「一闪」逆转</p><span class="badge">怒气系统</span></a>
+    <a class="card" style="--c:#6cf" href="last-blade/index.html"><span class="year">1997</span><div class="icon">🌸</div><h3>月华剑士</h3><div class="en">THE LAST BLADE</div><p>和风唯美·弹格( JUST DEFENSE )弹反回气</p><span class="badge">弹格系统</span></a>
+  </div>
+
+  <h2 id="shoot">🔫 射击游戏 <span class="en">SHOOTING</span></h2>
+  <div class="grid">
+    <a class="card" style="--c:#0f0" href="space-invaders/index.html"><span class="year">1978</span><div class="icon">👾</div><h3>太空侵略者</h3><div class="en">SPACE INVADERS</div><p>街机射击鼻祖，敌阵步进·UFO·掩体</p><span class="badge">1978 鼻祖</span></a>
+    <a class="card" style="--c:#fd0" href="galaga/index.html"><span class="year">1981</span><div class="icon">🐝</div><h3>小蜜蜂</h3><div class="en">GALAGA</div><p>编队入场·俯冲攻击·营救被俘战机→双机!</p><span class="badge">双战机</span></a>
+    <a class="card" style="--c:#a33" href="raiden/index.html"><span class="year">1993</span><div class="icon">🚀</div><h3>雷电</h3><div class="en">RAIDEN</div><p>纵向卷轴弹幕，红/蓝武器+追踪导弹+巨BOSS</p><span class="badge">弹幕艺术</span></a>
+    <a class="card" style="--c:#369" href="strikers-1945/index.html"><span class="year">1995</span><div class="icon">✈️</div><h3>打击者1945</h3><div class="en">STRIKERS 1945</div><p>彩京名作·三段蓄力全屏激光·金鹰升级</p><span class="badge">三段蓄力</span></a>
+    <a class="card" style="--c:#963" href="metal-slug/index.html"><span class="year">1996</span><div class="icon">🎖️</div><h3>合金弹头</h3><div class="en">METAL SLUG</div><p>横版跑打·H弹手雷·救俘虏·直升机BOSS</p><span class="badge">SNK神作</span></a>
+  </div>
+
+  <h2 id="beat">👊 清版动作过关 <span class="en">BEAT 'EM UP</span></h2>
+  <div class="grid">
+    <a class="card" style="--c:#c82" href="knights-of-valour-sangoku/index.html"><span class="year">1992</span><div class="icon">🏯</div><h3>三国志2 赤壁之战</h3><div class="en">WARRIORS OF FATE</div><p>关羽青龙偃月刀·三连击·火烧赤壁战吕布</p><span class="badge">卡普空手感</span></a>
+    <a class="card" style="--c:#3a7" href="cadillacs-dinosaurs/index.html"><span class="year">1993</span><div class="icon">🦖</div><h3>恐龙快打</h3><div class="en">CADILLACS AND DINOSAURS</div><p>杰克组合拳·捡枪扫射·迅猛龙·突变体博士</p><span class="badge">童年回忆</span></a>
+    <a class="card" style="--c:#4cf" href="captain-commando/index.html"><span class="year">1991</span><div class="icon">🤖</div><h3>名将</h3><div class="en">CAPTAIN COMMANDO</div><p>科幻未来都市·能量拳波·机械忍者闪现</p><span class="badge">英雄技</span></a>
+    <a class="card" style="--c:#58c" href="final-fight/index.html"><span class="year">1989</span><div class="icon">🌃</div><h3>快打旋风</h3><div class="en">FINAL FIGHT</div><p>METRO CITY 深夜·飞刀·火鸡回血·救Jessica</p><span class="badge">类型奠基</span></a>
+    <a class="card" style="--c:#d5a" href="west-adventure/index.html"><span class="year">1997</span><div class="icon">🐒</div><h3>西游释厄传</h3><div class="en">WEST ADVENTURE</div><p>悟空金箍棒·雷/火法术·筋斗云·降牛魔王</p><span class="badge">国产巅峰</span></a>
+    <a class="card" style="--c:#da2" href="knights-of-valour/index.html"><span class="year">1999</span><div class="icon">🐉</div><h3>三国战纪 风云再起</h3><div class="en">KNIGHTS OF VALOUR</div><p>赵云亮银枪·怒气爆气·魔法天书天崩地裂</p><span class="badge">IGS招牌</span></a>
+  </div>
+
+  <h2 id="puzzle">🧠 益智与其他 <span class="en">PUZZLE & MORE</span></h2>
+  <div class="grid">
+    <a class="card" style="--c:#0aa" href="tetris/index.html"><span class="year">1984</span><div class="icon">🧱</div><h3>俄罗斯方块</h3><div class="en">TETRIS</div><p>七种方块·硬降·消行连击·无尽加速</p><span class="badge">永恒经典</span></a>
+    <a class="card" style="--c:#ff0" href="pacman/index.html"><span class="year">1980</span><div class="icon">🟡</div><h3>吃豆人</h3><div class="en">PAC-MAN</div><p>四鬼各有性格·能量豆反杀·经典迷宫</p><span class="badge">文化符号</span></a>
+    <a class="card" style="--c:#e56" href="puyo-puyo/index.html"><span class="year">1991</span><div class="icon">🔴</div><h3>噗哟噗哟</h3><div class="en">PUYO PUYO</div><p>落下式连锁消除·全屏连锁爽快感</p><span class="badge">连锁消除</span></a>
+    <a class="card" style="--c:#7bf" href="puzzle-bobble/index.html"><span class="year">1994</span><div class="icon">🫧</div><h3>泡泡龙</h3><div class="en">PUZZLE BOBBLE</div><p>瞄准发射·三连消除·悬空掉落·顶棚下压</p><span class="badge">轻松休闲</span></a>
+    <a class="card" style="--c:#0ef" href="gals-panic/index.html"><span class="year">1990</span><div class="icon">🌀</div><h3>天蚕变</h3><div class="en">GALS PANIC</div><p>圈地填色·避开旋涡与火偶·占领达标过关</p><span class="badge">独特玩法</span></a>
+    <a class="card" style="--c:#b22" href="donkey-kong/index.html"><span class="year">1981</span><div class="icon">🦍</div><h3>大金刚</h3><div class="en">DONKEY KONG</div><p>平台跳跃鼻祖·躲滚桶·锤子砸击·救Pauline</p><span class="badge">马里奥首秀</span></a>
+  </div>
+</main>
+<footer>
+  🕹️ INSERT COIN — 21 款经典街机 · 纯原生 HTML5 Canvas + Web Audio 实现，无任何依赖<br>
+  键盘：方向键/WASD 移动，Z/J 攻击，X/K 技能，详见各游戏页底部提示 · 手机支持触屏按钮
+</footer>
+</body>
+</html>

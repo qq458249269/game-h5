@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>侍魂2 · SAMURAI SHODOWN II</title>
+<style>
+html,body{margin:0;background:#100c08;color:#ecf;font-family:"KaiTi","STKaiti",serif;height:100%;display:flex;align-items:center;justify-content:center;touch-action:none;user-select:none}
+#box{text-align:center}
+canvas{border:3px solid #8a6a2a;background:#000;touch-action:none}
+#hud{font-size:14px;color:#cb9;margin:6px 0}
+#msg{font-size:16px;color:#f60;height:22px}
+#tip{font-size:11px;color:#676;margin-top:4px;max-width:690px}
+button{background:#7a5a1a;border:0;color:#fff;font-family:inherit;padding:6px 16px;cursor:pointer;margin-top:4px}
+</style>
+</head>
+<body>
+<div id="box">
+  <div id="hud">霸王丸 <span id="hp1" style="color:#ff4">██████████</span> 怒 <span id="rg1" style="color:#f80">░░░░░</span>　VS　<span id="rg2" style="color:#f80">░░░░░</span> 怒 <span id="hp2" style="color:#c6f">██████████</span> 牙神幻十郎</div>
+  <canvas id="cv" width="640" height="400"></canvas>
+  <div id="msg">按 开始 或 Enter</div>
+  <button id="btn">开始 (Enter)</button>
+  <div id="tip">A/D 移动 · W 跳 · S 蹲防 · J 斩 · K 重斩(慢但痛) · L 怒气满时：一闪必杀! · 被打怒气涨 · 一击逆转</div>
+</div>
+<script>
+'use strict';
+const cv=document.getElementById('cv'),cx=cv.getContext('2d');
+const hp1El=document.getElementById('hp1'),hp2El=document.getElementById('hp2'),rg1El=document.getElementById('rg1'),rg2El=document.getElementById('rg2'),msgEl=document.getElementById('msg'),btn=document.getElementById('btn');
+const W=640,H=400,GY=352;
+let actx=null;
+function beep(f,d,type,vol){
+  try{
+    if(!actx)actx=new(window.AudioContext||window.webkitAudioContext)();
+    const o=actx.createOscillator(),g=actx.createGain();
+    o.connect(g);g.connect(actx.destination);
+    o.type=type||'square';o.frequency.value=f;g.gain.value=vol||0.035;
+    o.start();o.stop(actx.currentTime+d);
+  }catch(e){}
+}
+let p1,p2,fx,frame,state,keys,roundMsg,shake;
+const SFX={
+  hit(){beep(190,0.12,'sawtooth',0.06)},
+  heavy(){beep(120,0.2,'sawtooth',0.09)},
+  block(){beep(700,0.05,'square',0.03)},
+  slash(){beep(1400,0.1,'sawtooth',0.05)},
+  rage(){beep(100,0.6,'sawtooth',0.1)},
+  ko(){beep(70,0.9,'sawtooth',0.11)}
+};
+function reset(){
+  p1=mk('haomaru',130,1);
+  p2=mk('genjuro',410,-1);p2.ai=true;
+  fx=[];frame=0;shake=0;keys={};
+  roundMsg='斩！';
+  setTimeout(()=>{if(roundMsg==='斩！')roundMsg=''},1200);
+  state='play';upd();
+}
+function mk(who,x,dir){
+  return{who,x,y:GY,vy:0,dir,hp:100,maxhp:100,rage:0,onG:true,crouch:false,
+    atkT:0,atkKind:null,hitDone:false,hurtT:0,invT:0,
+    aiT:0,aiMove:0,aiBlock:false,zetsumei:false};
+}
+function upd(){
+  const s1=Math.ceil(p1.hp/p1.maxhp*10),s2=Math.ceil(p2.hp/p2.maxhp*10);
+  hp1El.textContent='█'.repeat(Math.max(0,s1))+'░'.repeat(10-s1);
+  hp2El.textContent='█'.repeat(Math.max(0,s2))+'░'.repeat(10-s2);
+  const r1=Math.round(p1.rage/100*5),r2=Math.round(p2.rage/100*5);
+  rg1El.textContent='█'.repeat(r1)+'░'.repeat(5-r1);
+  rg2El.textContent='█'.repeat(r2)+'░'.repeat(5-r2);
+}
+function gameOver(win1){
+  state='over';
+  roundMsg=(win1?'霸王丸':'牙神幻十郎')+' 胜利！道を極めし者…';
+  SFX.ko();
+  btn.textContent='再来一局 (Enter)';
+}
+function startAtk(f,kind){
+  if(f.atkT>0||f.hurtT>0)return;
+  f.atkKind=kind;f.hitDone=false;
+  f.atkT=kind==='heavy'?30:kind==='issatsu'?40:18;
+  const snd={heavy:SFX.heavy,issatsu:SFX.rage}[kind];
+  snd&&snd();
+  if(kind==='issatsu'){shake=16;}
+}
+function hitCheck(f,foe,dmg,reach,kind){
+  if(f.hitDone)return;
+  const dx=(foe.x-f.x)*f.dir;
+  if(dx>-14&&dx<reach&&Math.abs(foe.y-f.y)<52){
+    const rageMul=f.rage>=100?2:1;
+    if(f.rage>=100){f.rage=0;upd()}
+    const foeBlocking=foe.onG&&foe.hurtT<=0&&(foe.dir===-f.dir)&&
+      ((foe===p1&&(keys.a||foe.crouch))||(foe===p2&&(foe.aiBlock||foe.crouch)));
+    if(foeBlocking){
+      foe.hp-=dmg*rageMul*0.12;SFX.block();foe.hurtT=8;
+      if(Math.random()<0.25){foe.guardCrush=true}
+    }else{
+      foe.hp-=dmg*rageMul;
+      foe.hurtT=kind==='heavy'?32:20;
+      foe.x+=f.dir*(kind==='heavy'?10:6);
+      if(kind==='heavy'){SFX.slash();shake=9;
+        fx.push({kind:'slash',x:foe.x,y:foe.y-36,t:14,big:true})}
+      else{SFX.hit();fx.push({kind:'slash',x:foe.x,y:foe.y-34,t:12})}
+      fx.push({kind:'hit',x:foe.x,y:foe.y-34,t:12,big:kind==='heavy'||rageMul>1});
+      shake=Math.max(shake,kind==='heavy'?9:5);
+    }
+    // 被打方加怒
+    foe.rage=Math.min(100,foe.rage+14);
+    f.rage=Math.min(100,f.rage+6);
+    upd();
+    f.hitDone=true;
+  }
+}
+function update(){
+  frame++;
+  if(shake>0)shake--;
+  const f1=p1,f2=p2;
+  if(f1.onG&&f1.atkT<=0&&f1.hurtT<=0)f1.dir=f2.x>f1.x?1:-1;
+  if(f2.onG&&f2.atkT<=0&&f2.hurtT<=0)f2.dir=f1.x>f2.x?1:-1;
+  // ---- 玩家 ----
+  if(f1.hurtT<=0){
+    f1.crouch=keys.s&&f1.onG;
+    const spd=f1.crouch?0:2.2; // 侍魂节奏更沉
+    if(keys.a&&f1.atkT<=0)f1.x-=spd;
+    if(keys.d&&f1.atkT<=0)f1.x+=spd;
+    if(keys.w&&f1.onG&&f1.atkT<=0){f1.vy=-11;f1.onG=false}
+    if(keys.j&&f1.atkT<=0){startAtk(f1,'slash');keys.j=false}
+    if(keys.k&&f1.atkT<=0){startAtk(f1,'heavy');keys.k=false}
+    if(keys.l&&f1.atkT<=0&&f1.rage>=100){startAtk(f1,'issatsu');keys.l=false}
+  }
+  // ---- AI ----
+  if(f2.ai&&f2.hurtT<=0){
+    f2.aiT--;
+    const dx=f1.x-f2.x,ad=Math.abs(dx);
+    if(f2.aiT<=0){
+      f2.aiT=24+Math.random()*30;
+      f2.aiBlock=Math.random()<0.35;
+      const r=Math.random();
+      if(ad>150)f2.aiMove=dx>0?1:-1;
+      else if(ad<80)f2.aiMove=r<0.5?-1:0;
+      else f2.aiMove=r<0.4?(dx>0?1:-1):0;
+      if(r>0.82&&ad<90)startAtk(f2,'slash');
+      else if(r>0.7&&ad<100)startAtk(f2,'heavy');
+      else if(r>0.66&&p2.rage>=100&&ad<110)startAtk(f2,'issatsu');
+    }
+    if(f2.aiMove===1)f2.x+=1.9;
+    else if(f2.aiMove===-1)f2.x-=1.9;
+  }
+  for(const f of[f1,f2]){
+    if(!f.onG){f.vy+=0.55;f.y+=f.vy;if(f.y>=GY){f.y=GY;f.onG=true}}
+    if(f.atkT>0){
+      f.atkT--;
+      const k=f.atkKind;
+      const win={slash:[3,8],heavy:[6,12],issatsu:[8,18]}[k];
+      if(win&&!f.hitDone&&f.atkT<=win[1]&&f.atkT>=win[0]){
+        hitCheck(f,f===f1?f2:f1,{slash:11,heavy:26,issatsu:55}[k],
+          k==='issatsu'?60:k==='heavy'?46:36,k);
+      }
+      if(f.atkT===0)f.atkKind=null;
+    }
+    if(f.hurtT>0)f.hurtT--;
+    // 怒气缓涨
+    if(frame%30===0)f.rage=Math.min(100,f.rage+2);
+  }
+  if(frame%30===0)upd();
+  const ov=54-Math.abs(f1.x-f2.x);
+  if(ov>0){const s=Math.sign(f1.x-f2.x)||1;
+    f1.x+=s*ov*0.25;f2.x-=s*ov*0.25}
+  f1.x=Math.max(30,Math.min(W-30,f1.x));
+  f2.x=Math.max(30,Math.min(W-30,f2.x));
+  if(p1.hp<=0||p2.hp<=0){
+    p1.hp=Math.max(0,p1.hp);p2.hp=Math.max(0,p2.hp);
+    gameOver(p2.hp<=0);
+  }
+  for(const e of fx)e.t--;
+  fx=fx.filter(e=>e.t>0);
+}
+function draw(){
+  if(shake>0)cx.save(),cx.translate((Math.random()-0.5)*7,(Math.random()-0.5)*7);
+  // 暮色渡场
+  const g=cx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,'#241014');g.addColorStop(0.6,'#5a2a1a');g.addColorStop(1,'#7a4020');
+  cx.fillStyle=g;cx.fillRect(0,0,W,H);
+  // 落日
+  cx.fillStyle='#e8a060';
+  cx.beginPath();cx.arc(W/2,150,52,0,7);cx.fill();
+  cx.fillStyle='rgba(200,80,40,.35)';
+  cx.beginPath();cx.arc(W/2,150,70,0,7);cx.fill();
+  // 远处松树
+  for(let i=0;i<6;i++){
+    const bx=(i*150+60)%W;
+    cx.fillStyle='#1a1008';
+    cx.fillRect(bx,210,8,142);
+    cx.beginPath();cx.moveTo(bx-30,220);cx.lineTo(bx+4,170);cx.lineTo(bx+38,220);cx.fill();
+  }
+  // 地面：榻榻米
+  cx.fillStyle='#6a5a34';cx.fillRect(0,GY,W,H-GY);
+  cx.strokeStyle='rgba(40,30,10,.5)';
+  for(let x=0;x<W;x+=64){cx.beginPath();cx.moveTo(x,GY);cx.lineTo(x,H);cx.stroke()}
+  cx.fillStyle='#7a6a40';cx.fillRect(0,GY,W,5);
+  drawFighter(p1,'#e8b88a','#2a3a5a');
+  drawFighter(p2,'#e8c8d8','#4a1a3a');
+  // 刀光
+  for(const e of fx){
+    if(e.kind==='slash'){
+      cx.strokeStyle=e.big?'rgba(255,240,200,'+(e.t/14)+')':'rgba(200,220,255,'+(e.t/12)+')';
+      cx.lineWidth=e.big?5:3;
+      cx.beginPath();
+      cx.arc(e.x,e.y,e.big?42:30, -2.4, -0.6);
+      cx.stroke();cx.lineWidth=1;
+    }
+    if(e.kind==='hit'){
+      cx.fillStyle='rgba(255,240,180,'+(e.t/12)+')';
+      cx.beginPath();cx.arc(e.x,e.y,e.big?18:11,0,7);cx.fill();
+    }
+  }
+  const drawBar=(x,w,hp,maxhp,col)=>{
+    cx.fillStyle='#200';cx.fillRect(x,26,w,16);
+    cx.fillStyle=col;cx.fillRect(x,26,w*Math.max(0,hp)/maxhp,16);
+    cx.strokeStyle='#000';cx.strokeRect(x,26,w,16);
+  };
+  drawBar(30,250,p1.hp,p1.maxhp,'#4f4');
+  drawBar(W-280,250,p2.hp,p2.maxhp,'#a6f');
+  // 怒气条
+  const drawRage=(x,w,r)=>{
+    cx.fillStyle='#201000';cx.fillRect(x,48,w,7);
+    cx.fillStyle=r>=100?'#f40':(Math.sin(frame*0.2)>0?'#f80':'#a40');
+    cx.fillRect(x,48,w*r/100,7);
+    if(r>=100){cx.fillStyle='#ff4';cx.font='bold 10px serif';
+      cx.fillText('怒',x+w/2-6,55)}
+  };
+  drawRage(30,250,p1.rage);
+  drawRage(W-280,250,p2.rage);
+  cx.fillStyle='#fff';cx.font='bold 13px serif';cx.textAlign='left';
+  cx.fillText('覇王丸',30,22);
+  cx.textAlign='right';cx.fillText('牙神幻十郎',W-30,22);
+  if(roundMsg){
+    cx.fillStyle='rgba(0,0,0,.5)';cx.fillRect(0,168,W,64);
+    cx.fillStyle='#f84';cx.font='bold 30px serif';
+    cx.fillText(roundMsg,W/2,208);
+  }
+  if(shake>0)cx.restore();
+}
+function drawFighter(f,skin,cloth){
+  const sx=f.x,sy=f.y;
+  cx.fillStyle='rgba(0,0,0,.3)';
+  cx.beginPath();cx.ellipse(f.x,GY+4,17,4,0,0,7);cx.fill();
+  if(f.hurtT>0&&f.hurtT%4<2)cx.globalAlpha=0.6;
+  const h=f.crouch?0.72:1;
+  cx.save();cx.translate(sx,sy);cx.scale(f.dir,1);
+  cx.fillStyle='#1a1418';
+  cx.fillRect(-7,-13*h,6,13*h);cx.fillRect(1,-13*h,6,13*h);
+  cx.fillStyle=cloth;
+  cx.fillRect(-9,-44*h,18,22*h);
+  cx.fillStyle=f.who==='haomaru'?'#2a4a8a':'#5a2a4a';
+  cx.fillRect(-9,-24*h,18,5); // 腰带
+  cx.fillStyle=skin;
+  cx.beginPath();cx.arc(2,-50*h,7,0,7);cx.fill();
+  cx.fillStyle=f.who==='haomaru'?'#1a1a1a':'#e8e8e8'; // 发
+  cx.fillRect(-5,-57*h,13,5);
+  // 发髻
+  cx.fillStyle=f.who==='haomaru'?'#1a1a1a':'#e8e8e8';
+  cx.fillRect(4,-62*h,5,7);
+  // 刀
+  cx.save();
+  if(f.atkT>0){
+    const k=f.atkKind;
+    if(k==='slash'||k==='heavy'||k==='issatsu'){
+      const prog=1-f.atkT/(k==='heavy'?30:k==='issatsu'?40:18);
+      cx.rotate(-1.4+prog*2.8);
+      cx.fillStyle='#d8d8e8';
+      cx.fillRect(4,-3.5,f.who==='haomaru'?52:54,5);
+      cx.fillStyle='#5a4a2a';
+      cx.fillRect(-8,-2.5,12,4);
+      if(k==='issatsu'){ // 一闪白光
+        cx.fillStyle='rgba(255,255,255,.8)';
+        cx.fillRect(4,-8,90,12);
+      }
+    }
+  }else{
+    cx.rotate(0.4);
+    cx.fillStyle='#5a4a2a';
+    cx.fillRect(2,-2,10,4); // 刀鞘
+  }
+  cx.restore();
+  cx.restore();
+  cx.globalAlpha=1;
+}
+const KM={a:'a',d:'d',w:'w',s:'s',j:'j',k:'k',l:'l'};
+document.addEventListener('keydown',e=>{
+  if(['a','d','w','s','j','k','l',' '].includes(e.key))e.preventDefault();
+  const k=e.key.toLowerCase();
+  if(KM[k])keys[k]=true;
+  if(e.key==='Enter'&&state!=='play'){reset();btn.textContent='重开 (Enter)'}
+});
+document.addEventListener('keyup',e=>{
+  const k=e.key.toLowerCase();
+  if(KM[k])keys[k]=false;
+});
+btn.onclick=()=>{if(state!=='play'){reset();btn.textContent='重开 (Enter)'}};
+if('ontouchstart' in window){
+  const tp=document.createElement('div');
+  tp.style.cssText='position:fixed;bottom:8px;left:0;right:0;text-align:center';
+  [['◀',()=>keys.a=true,()=>keys.a=false],['▶',()=>keys.d=true,()=>keys.d=false],['蹲',()=>keys.s=true,()=>keys.s=false],['跳',()=>keys.w=true,()=>keys.w=false],['斬',()=>keys.j=true,()=>keys.j=false],['重斬',()=>keys.k=true,()=>keys.k=false],['一閃',()=>keys.l=true,()=>keys.l=false]].forEach(([k,dn,up])=>{
+    const b=document.createElement('button');
+    b.textContent=k;b.style.cssText='width:44px;height:46px;font-size:13px;margin:0 2px;background:#7a5a1a';
+    b.addEventListener('pointerdown',e=>{e.preventDefault();dn()});
+    if(up)b.addEventListener('pointerup',up);
+    tp.appendChild(b);
+  });
+  document.body.appendChild(tp);
+}
+reset();
+function loop(){requestAnimationFrame(loop);if(state==='play')update();draw()}
+loop();
+</script>
+</body>
+</html>

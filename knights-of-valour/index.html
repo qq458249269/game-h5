@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>三国战纪 · 风云再起</title>
+<style>
+html,body{margin:0;background:#100c06;color:#ffe;font-family:"KaiTi","STKaiti",serif;height:100%;display:flex;align-items:center;justify-content:center;touch-action:none;user-select:none}
+#box{text-align:center}
+canvas{border:3px solid #8a6a2a;background:#000;touch-action:none}
+#hud{font-size:14px;color:#ed5;margin:6px 0}
+#msg{font-size:16px;color:#f80;height:22px}
+#tip{font-size:11px;color:#776;margin-top:4px;max-width:660px}
+button{background:#8a6a1a;border:0;color:#ffe;font-family:inherit;padding:6px 16px;cursor:pointer;margin-top:4px}
+</style>
+</head>
+<body>
+<div id="box">
+  <div id="hud">赵云 <span id="hp" style="color:#f44">██████████</span> 怒气 <span id="rg" style="color:#f80">░░░░░░░░░░</span> 天书 <span id="bk">0</span>　得分 <span id="sc">0</span></div>
+  <canvas id="cv" width="640" height="400"></canvas>
+  <div id="msg">按 开始 或 Enter</div>
+  <button id="btn">开始 (Enter)</button>
+  <div id="tip">←→↑↓ 走位 · Z 三连枪 · 空格 跳 · V 怒气爆气(满槽释放清屏) · B 魔法天书(拾取) · 长坂坡战吕布</div>
+</div>
+<script>
+'use strict';
+const cv=document.getElementById('cv'),cx=cv.getContext('2d');
+const hpEl=document.getElementById('hp'),rgEl=document.getElementById('rg'),bkEl=document.getElementById('bk'),scEl=document.getElementById('sc'),msgEl=document.getElementById('msg'),btn=document.getElementById('btn');
+const W=640,H=400,YMIN=298,YMAX=386,LEVEL=4800;
+let actx=null;
+function beep(f,d,type,vol){
+  try{
+    if(!actx)actx=new(window.AudioContext||window.webkitAudioContext)();
+    const o=actx.createOscillator(),g=actx.createGain();
+    o.connect(g);g.connect(actx.destination);
+    o.type=type||'square';o.frequency.value=f;g.gain.value=vol||0.03;
+    o.start();o.stop(actx.currentTime+d);
+  }catch(e){}
+}
+let p,enemies,items,fx,frame,score,cam,state,keys,shake,spawned,gateIdx,comboT;
+const GATES=[
+  {x:620, list:[['spear',3]]},
+  {x:1500,list:[['spear',2],['archer',2]]},
+  {x:2500,list:[['archer',2],['spear',2],['guard',1]]},
+  {x:3400,list:[['guard',2],['spear',3]]},
+];
+function reset(){
+  p={x:80,y:360,dir:1,hp:110,maxhp:110,rage:0,books:1,atkT:0,combo:0,comboT:0,hurtT:0,invT:0,zy:0,vz:0,onG:true,burstT:0};
+  enemies=[];items=[];fx=[];
+  frame=0;score=0;cam=0;shake=0;gateIdx=0;spawned=false;
+  keys={};
+  state='play';upd();msgEl.textContent='长坂坡 · 血战曹军';
+  setTimeout(()=>{if(msgEl.textContent.includes('长坂'))msgEl.textContent=''},2000);
+}
+function upd(){
+  scEl.textContent=score;bkEl.textContent=p.books;
+  const hseg=Math.ceil(p.hp/p.maxhp*10),rseg=Math.round(p.rage/100*10);
+  hpEl.textContent='█'.repeat(Math.max(0,hseg))+'░'.repeat(10-hseg);
+  rgEl.textContent='█'.repeat(rseg)+'░'.repeat(10-rseg);
+}
+function mkEnemy(type,x){
+  const base={x,y:YMIN+Math.random()*(YMAX-YMIN),dir:-1,hurtT:0,atkT:0,downT:0};
+  if(type==='spear')return{...base,type,hp:30,sp:1.25,dmg:9,score:300,r:11,name:'枪兵'};
+  if(type==='archer')return{...base,type,hp:22,sp:1.0,dmg:8,score:400,r:11,name:'弓兵',arrowT:60};
+  if(type==='guard')return{...base,type,hp:80,sp:0.8,dmg:15,score:800,r:14,big:true,name:'校尉'};
+  return{...base,type:'boss',hp:380,sp:1.0,dmg:19,score:10000,r:18,boss:true,name:'吕布'};
+}
+function gameOver(){state='over';msgEl.textContent='GAME OVER';btn.textContent='再来一局 (Enter)'}
+function victory(){state='win';msgEl.textContent='吕布退去 · 威震长坂!';btn.textContent='再玩一次 (Enter)';
+  beep(600,0.2);setTimeout(()=>beep(800,0.2),220);setTimeout(()=>beep(1100,0.5),440)}
+function killP(){
+  if(p.invT>0||state!=='play')return;
+  p.hurtT=26;beep(90,0.35,'sawtooth',0.07);
+  p.hp=p.maxhp;p.invT=140;p.rage=0;p.x=Math.max(cam+40,p.x-120);upd();
+  score=Math.max(0,score-500);upd();
+}
+function addRage(n){p.rage=Math.min(100,p.rage+n);upd()}
+function update(){
+  frame++;
+  if(shake>0)shake--;
+  // 爆气状态
+  if(p.burstT>0){
+    p.burstT--;
+    if(p.burstT%6===0)beep(700+Math.random()*300,0.05,'sawtooth',0.02);
+    if(p.burstT===0){msgEl.textContent=''}
+  }
+  const spdMul=p.burstT>0?1.5:1;
+  if(p.hurtT<=0&&p.atkT<=0){
+    if(keys.ArrowLeft)p.x-=2.4*spdMul,p.dir=-1;
+    if(keys.ArrowRight)p.x+=2.4*spdMul,p.dir=1;
+    if(keys.ArrowUp)p.y-=1.5*spdMul;
+    if(keys.ArrowDown)p.y+=1.5*spdMul;
+  }
+  p.x=Math.max(cam+14,Math.min(LEVEL-14,p.x));
+  p.y=Math.max(YMIN,Math.min(YMAX,p.y));
+  if(keys.Space&&p.onG&&p.hurtT<=0){p.vz=-9.5;p.onG=false;beep(300,0.07,'sine',0.02)}
+  if(!p.onG){p.vz+=0.5;p.zy+=p.vz;if(p.zy>=0){p.zy=0;p.onG=true}}
+  // 爆气
+  if(keys.v&&p.rage>=100){keys.v=false;
+    p.rage=0;p.burstT=180;
+    msgEl.textContent='★ 爆 气 ★';
+    beep(200,0.5,'sawtooth',0.09);shake=14;
+    for(const e of enemies){if(e.hp>0)hurtEnemy(e,40,true)}
+    upd();
+  }else keys.v=false;
+  // 天书
+  if(keys.b&&p.books>0&&p.hurtT<=0){keys.b=false;
+    p.books--;upd();
+    msgEl.textContent='✦ 魔法天书 · 天崩地裂 ✦';
+    beep(160,0.8,'sawtooth',0.1);shake=25;
+    fx.push({kind:'book',t:50});
+    for(const e of enemies){if(e.hp>0)hurtEnemy(e,70,true)}
+  }else keys.b=false;
+  // 枪击
+  if(keys.z&&p.atkT<=0&&p.hurtT<=0){
+    p.atkT=13;p.combo=(frame-p.comboT<46?p.combo:0)+1;p.comboT=frame;
+    beep(p.combo===3?230:660,0.05,'square',0.02);
+  }
+  if(p.atkT>0){
+    p.atkT--;
+    const prog=13-p.atkT;
+    if(prog>=3&&prog<=9&&!p.hitDone){
+      const dmg=(p.combo===3?24:8)*(p.burstT>0?1.8:1);
+      const reach=p.combo===3?50:36;
+      for(const e of enemies){
+        if(e.hp<=0)continue;
+        const dx=(e.x-p.x)*p.dir;
+        if(dx>-8&&dx<reach&&Math.abs(e.y-p.y)<20){
+          hurtEnemy(e,dmg,p.combo===3);p.hitDone=true;
+          addRage(p.combo===3?14:6);
+          break;
+        }
+      }
+    }
+    if(p.atkT===0)p.hitDone=false;
+  }
+  if(p.hurtT>0){p.hurtT--;p.x-=p.dir*0.9}
+  if(p.invT>0)p.invT--;
+  if(p.x-cam>W*0.6)cam=p.x-W*0.6;
+  if(p.x-cam<W*0.3)cam=p.x-W*0.3;
+  cam=Math.max(0,Math.min(LEVEL-W,cam));
+  // 特效
+  for(const f of fx)f.t--;
+  fx=fx.filter(f=>f.t>0);
+  // 刷兵
+  if(gateIdx<GATES.length){
+    const g=GATES[gateIdx];
+    if(!spawned&&p.x>g.x-350&&enemies.length===0){
+      g.list.forEach(([t,n])=>{for(let i=0;i<n;i++)enemies.push(mkEnemy(t,cam+W+50+i*44))});
+      spawned=true;msgEl.textContent='曹兵来袭!';
+    }
+    if(spawned&&enemies.length===0){gateIdx++;spawned=false;msgEl.textContent=''}
+  }else if(enemies.length===0&&!p.bossSpawned){
+    if(p.x>LEVEL-800){
+      enemies.push(mkEnemy('boss',cam+W+80));
+      p.bossSpawned=true;msgEl.textContent='吕布 袭来!';
+      beep(100,0.8,'sawtooth',0.09);
+    }
+  }else if(p.bossSpawned&&enemies.length===0&&!p.winFlag){p.winFlag=true;setTimeout(victory,700)}
+  // 敌AI
+  for(const e of enemies){
+    if(e.hp<=0)continue;
+    if(e.downT>0){e.downT--;continue}
+    if(e.hurtT>0){e.hurtT--;e.x-=e.dir*2;continue}
+    const dx=p.x-e.x,dy=p.y-e.y,L=Math.hypot(dx,dy);
+    e.dir=Math.sign(dx)||-1;
+    // 弓兵远程
+    if(e.type==='archer'&&L>120&&L<340){
+      e.arrowT--;
+      if(e.arrowT<=0){
+        e.arrowT=110+Math.random()*60;
+        fx.push({kind:'arrow',x:e.x+e.dir*10,y:e.y-16,vx:e.dir*5,t:90});
+        beep(800,0.06,'square',0.02);
+      }
+      if(L>e.r+30){e.x+=dx/L*e.sp*0.6}
+      continue;
+    }
+    if(L>e.r+18){
+      e.x+=dx/L*e.sp;e.y+=dy/L*e.sp*0.6;
+    }else{
+      e.atkT--;
+      if(e.atkT<=0){
+        e.atkT=e.boss?55:90;
+        if(p.invT<=0&&p.hurtT<=0&&p.burstT<=0){
+          p.hurtT=22;p.hp-=e.dmg;upd();
+          beep(150,0.2,'sawtooth',0.05);shake=8;
+          if(p.hp<=0)killP();
+        }else if(p.burstT>0&&p.invT<=0){
+          p.hurtT=10;p.hp-=e.dmg*0.4;upd();
+        }
+      }
+    }
+    e.x=Math.max(cam-40,Math.min(LEVEL,e.x));
+    e.y=Math.max(YMIN,Math.min(YMAX,e.y));
+  }
+  enemies=enemies.filter(e=>e.hp>0);
+  // 箭矢
+  for(const f of fx){
+    if(f.kind!=='arrow')continue;
+    f.x+=f.vx;f.t--;
+    if(Math.abs(f.x-p.x)<10&&Math.abs(f.y-(p.y-14))<16&&p.invT<=0&&p.burstT<=0){
+      f.t=0;p.hurtT=20;p.hp-=10;upd();beep(200,0.15,'sawtooth',0.05);
+      if(p.hp<=0)killP();
+    }
+  }
+  fx=fx.filter(f=>f.t>0);
+  // 物品
+  for(const it of items){
+    if(Math.abs(it.x-p.x)<20&&Math.abs(it.y-p.y)<16){
+      it.dead=true;
+      if(it.kind==='book'){p.books++;msgEl.textContent='获得 魔法天书!(按B释放)';upd()}
+      else if(it.kind==='wine'){addRage(60);msgEl.textContent='烈酒! 怒气大增';upd()}
+      else if(it.kind==='meat'){p.hp=Math.min(p.maxhp,p.hp+45);msgEl.textContent='烤肉! 体力恢复';upd()}
+      else{score+=600;upd()}
+      beep(900,0.12,'sine',0.05);
+      setTimeout(()=>{if(msgEl.textContent.includes('!')&&msgEl.textContent.length<22)msgEl.textContent=''},1400);
+    }
+  }
+  items=items.filter(i=>!i.dead);
+}
+function hurtEnemy(e,dmg,knock){
+  e.hp-=dmg;e.hurtT=knock?24:13;
+  beep(190,0.08,'sawtooth',0.04);
+  if(e.hp<=0){
+    score+=e.score;addRage(10);upd();
+    if(e.boss){shake=40;msgEl.textContent='吕布 败走!';
+      setTimeout(()=>{enemies=enemies.filter(x=>x!==e)},900)}
+    else if(Math.random()<0.32){
+      const roll=Math.random();
+      const kind=roll<0.28?'book':roll<0.55?'wine':'meat';
+      items.push({x:e.x,y:e.y,kind});
+    }
+  }else if(knock)e.downT=22;
+}
+function draw(){
+  if(shake>0)cx.save(),cx.translate((Math.random()-0.5)*6,(Math.random()-0.5)*6);
+  const g=cx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,'#2a1a10');g.addColorStop(0.65,'#4a3018');g.addColorStop(1,'#6a4620');
+  cx.fillStyle=g;cx.fillRect(0,0,W,H);
+  // 战火远山
+  cx.fillStyle='#281a0e';
+  for(let i=0;i<7;i++){
+    const mx=((i*340-cam*0.25)%(W+340)+W+340)%(W+340)-170;
+    cx.beginPath();cx.moveTo(mx-170,YMIN);cx.lineTo(mx,YMIN-95-(i%2)*35);cx.lineTo(mx+170,YMIN);cx.fill();
+  }
+  // 烽烟
+  for(let x=200;x<LEVEL;x+=300){
+    const sx=x-cam*0.6;
+    if(sx>-40&&sx<W+40){
+      cx.fillStyle='rgba(90,70,60,.5)';
+      cx.beginPath();cx.arc(sx,YMIN-90+Math.sin(frame*0.03+x)*6,14,0,7);cx.fill();
+      cx.beginPath();cx.arc(sx+8,YMIN-110,10,0,7);cx.fill();
+    }
+  }
+  // 地面
+  cx.fillStyle='#5a4626';cx.fillRect(0,YMIN,W,H-YMIN);
+  cx.fillStyle='#4a3a20';cx.fillRect(0,YMAX+8,W,H-YMAX-8);
+  const ents=[];
+  for(const e of enemies)if(e.hp>0)ents.push({y:e.y,d:()=>drawEnemy(e)});
+  for(const it of items)ents.push({y:it.y,d:()=>drawItem(it)});
+  ents.push({y:p.y,d:drawPlayer});
+  ents.sort((a,b)=>a.y-b.y).forEach(o=>o.d());
+  // 箭矢
+  cx.fillStyle='#caa';
+  for(const f of fx)if(f.kind==='arrow')cx.fillRect(f.x-cam-6,f.y-1,12,2);
+  // 天书特效
+  for(const f of fx){
+    if(f.kind!=='book')continue;
+    const a=f.t/50;
+    cx.fillStyle='rgba(120,200,255,'+(a*0.5)+')';
+    cx.fillRect(0,0,W,H);
+    cx.strokeStyle='rgba(200,240,255,'+a+')';cx.lineWidth=3;
+    for(let i=0;i<8;i++){
+      const lx=(i*97+frame*13)%W;
+      cx.beginPath();cx.moveTo(lx,0);cx.lineTo(lx-30,H);cx.stroke();
+    }
+    cx.lineWidth=1;
+  }
+  // 敌血条
+  let bi=0;
+  for(const e of enemies){
+    if(e.hp<=0||bi>=3)continue;bi++;
+    const bw=150,maxhp=e.boss?380:e.big?80:e.type==='archer'?22:30;
+    cx.fillStyle='#200';cx.fillRect(W-bw-14,14+(bi-1)*15,bw,9);
+    cx.fillStyle=e.boss?'#f80':'#d55';
+    cx.fillRect(W-bw-14,14+(bi-1)*15,bw*e.hp/maxhp,9);
+    cx.fillStyle='#fed';cx.font='10px "KaiTi",serif';
+    cx.fillText(e.name,W-bw-14,10+(bi-1)*15);
+  }
+  // 爆气光晕
+  if(p.burstT>0){
+    const a=0.25+Math.sin(frame*0.4)*0.1;
+    cx.fillStyle='rgba(255,120,20,'+a+')';
+    cx.beginPath();cx.arc(p.x-cam,p.y-20+p.zy,36,0,7);cx.fill();
+  }
+  if(shake>0)cx.restore();
+  if(state==='over'||state==='win'){
+    cx.fillStyle='rgba(0,0,0,.6)';cx.fillRect(0,150,W,100);
+    cx.fillStyle=state==='win'?'#fd5':'#f44';
+    cx.font='bold 36px "KaiTi",serif';cx.textAlign='center';
+    cx.fillText(state==='win'?'威 震 华 夏':'败 北',W/2,205);
+    cx.fillStyle='#fff';cx.font='15px serif';
+    cx.fillText('得分 '+score,W/2,232);
+  }
+}
+function drawPlayer(){
+  const sx=p.x-cam,sy=p.y+p.zy;
+  if(p.invT>0&&p.invT%8<4)cx.globalAlpha=0.35;
+  cx.fillStyle='rgba(0,0,0,.3)';
+  cx.beginPath();cx.ellipse(p.x-cam,p.y+5,13,4,0,0,7);cx.fill();
+  const walk=p.atkT<=0&&p.hurtT<=0;
+  const lo=walk?Math.sin(frame*0.35)*4:0;
+  cx.fillStyle='#2a3a4a';
+  cx.fillRect(sx-6+lo,sy-10,5,10);cx.fillRect(sx+1-lo,sy-10,5,10);
+  cx.fillStyle='#d8d8e0'; // 白银甲
+  cx.fillRect(sx-8,sy-30,16,20);
+  cx.fillStyle='#8a9ab0';cx.fillRect(sx-8,sy-20,16,3);
+  cx.fillStyle='#b02a2a';cx.fillRect(sx-8,sy-32,16,4); // 红披肩
+  cx.fillStyle='#e8c39e';
+  cx.beginPath();cx.arc(sx,sy-37,6,0,7);cx.fill();
+  cx.fillStyle='#2a2a3a';cx.fillRect(sx-6,sy-42,12,4); // 盔
+  cx.fillStyle='#c83030';cx.fillRect(sx-2,sy-46,4,4); // 盔缨
+  // 亮银枪
+  cx.save();cx.translate(sx,sy-24);
+  if(p.atkT>0){
+    const pr=(13-p.atkT)/13;
+    cx.rotate(p.dir*(pr<0.5?-1.7+pr*3.6:1.15));
+  }else cx.rotate(p.dir*0.55);
+  cx.fillStyle='#a8b0c0';
+  cx.fillRect(0,-2,p.dir*48,3.5);
+  cx.fillStyle='#e8f0f8';
+  cx.beginPath();cx.moveTo(p.dir*48,-4);cx.lineTo(p.dir*58,0);cx.lineTo(p.dir*48,4);cx.fill();
+  cx.fillStyle='#c83030';
+  cx.beginPath();cx.moveTo(p.dir*44,0);cx.lineTo(p.dir*48,-5);cx.lineTo(p.dir*52,0);cx.lineTo(p.dir*48,5);cx.fill();
+  cx.restore();
+  cx.globalAlpha=1;
+}
+function drawEnemy(e){
+  const sx=e.x-cam,sy=e.y;
+  cx.fillStyle='rgba(0,0,0,.3)';
+  cx.beginPath();cx.ellipse(sx,sy+5,e.r,4,0,0,7);cx.fill();
+  const down=e.downT>0||e.hurtT>0;
+  if(down)cx.save(),cx.translate(sx,sy),cx.rotate(1.1),cx.translate(-sx,-sy);
+  const bs=e.boss?1.45:e.big?1.25:1;
+  cx.fillStyle='#222';
+  cx.fillRect(sx-5*bs,sy-10,4*bs,10);cx.fillRect(sx+1,sy-10,4*bs,10);
+  cx.fillStyle=e.boss?'#8a2a2a':e.big?'#3a4a6a':e.type==='archer'?'#4a5a3a':'#5a5a4a';
+  cx.fillRect(sx-8*bs,sy-30*bs,16*bs,20*bs);
+  cx.fillStyle=e.boss?'#e8b088':'#e8c39e';
+  cx.beginPath();cx.arc(sx,sy-35*bs,5.5*bs,0,7);cx.fill();
+  cx.fillStyle=e.boss?'#a8a8b8':'#445';
+  cx.fillRect(sx-6*bs,sy-40*bs,12*bs,4*bs);
+  if(e.boss){ // 雉鸡翎
+    cx.strokeStyle='#2a8a2a';cx.lineWidth=2;
+    cx.beginPath();cx.moveTo(sx-6,sy-42);cx.quadraticCurveTo(sx-16,sy-58,sx-10,sy-66);cx.stroke();
+    cx.beginPath();cx.moveTo(sx+6,sy-42);cx.quadraticCurveTo(sx+16,sy-58,sx+10,sy-66);cx.stroke();
+    cx.lineWidth=1;
+  }
+  // 武器
+  cx.fillStyle='#8a8a8a';
+  if(e.type==='archer'){
+    cx.strokeStyle='#8a6a3a';cx.lineWidth=2;
+    cx.beginPath();cx.arc(sx+e.dir*8,sy-20,9,-1.2,1.2);cx.stroke();cx.lineWidth=1;
+  }else if(e.boss){ // 方天画戟
+    cx.fillRect(sx+e.dir*5,sy-30,e.dir*34,4);
+    cx.fillStyle='#c83030';
+    cx.beginPath();cx.moveTo(sx+e.dir*36,sy-10);cx.lineTo(sx+e.dir*36,sy-38);cx.lineTo(sx+e.dir*44,sy-24);cx.fill();
+  }else{
+    cx.fillRect(sx+e.dir*6,sy-26,e.dir*24,3);
+  }
+  if(down)cx.restore();
+}
+function drawItem(it){
+  const sx=it.x-cam,sy=it.y,bob=Math.sin(frame*0.1)*2;
+  if(sx<-20||sx>W+20)return;
+  if(it.kind==='book'){
+    cx.fillStyle='#4a8ad8';cx.fillRect(sx-8,sy-14+bob,16,12);
+    cx.fillStyle='#8ac0f8';cx.fillRect(sx-8,sy-14+bob,16,3);
+    cx.fillStyle='#fff';cx.font='9px serif';cx.fillText('书',sx-4,sy-4+bob);
+  }else if(it.kind==='wine'){
+    cx.fillStyle='#8a4a2a';cx.fillRect(sx-4,sy-14+bob,8,12);
+    cx.fillStyle='#d8a86a';cx.fillRect(sx-4,sy-14+bob,8,3);
+  }else{
+    cx.fillStyle='#b5432a';cx.beginPath();cx.ellipse(sx,sy-7+bob,8,5,0,0,7);cx.fill();
+    cx.fillStyle='#eee';cx.fillRect(sx+6,sy-11+bob,3,9);
+  }
+}
+document.addEventListener('keydown',e=>{
+  if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown',' ','z','b','v','Z','B','V'].includes(e.key))e.preventDefault();
+  if(e.key==='ArrowLeft')keys.ArrowLeft=true;
+  if(e.key==='ArrowRight')keys.ArrowRight=true;
+  if(e.key==='ArrowUp')keys.ArrowUp=true;
+  if(e.key==='ArrowDown')keys.ArrowDown=true;
+  if(e.key==='z'||e.key==='Z')keys.z=true;
+  if(e.key==='b'||e.key==='B')keys.b=true;
+  if(e.key==='v'||e.key==='V')keys.v=true;
+  if(e.key===' ')keys.Space=true;
+  if(e.key==='Enter'&&state!=='play'){reset();btn.textContent='重开 (Enter)'}
+});
+document.addEventListener('keyup',e=>{
+  if(e.key==='ArrowLeft')keys.ArrowLeft=false;
+  if(e.key==='ArrowRight')keys.ArrowRight=false;
+  if(e.key==='ArrowUp')keys.ArrowUp=false;
+  if(e.key==='ArrowDown')keys.ArrowDown=false;
+  if(e.key==='z'||e.key==='Z')keys.z=false;
+  if(e.key==='b'||e.key==='B')keys.b=false;
+  if(e.key==='v'||e.key==='V')keys.v=false;
+  if(e.key===' ')keys.Space=false;
+});
+btn.onclick=()=>{if(state!=='play'){reset();btn.textContent='重开 (Enter)'}};
+if('ontouchstart' in window){
+  const tp=document.createElement('div');
+  tp.style.cssText='position:fixed;bottom:8px;left:0;right:0;text-align:center';
+  [['←',()=>keys.ArrowLeft=true,()=>keys.ArrowLeft=false],['→',()=>keys.ArrowRight=true,()=>keys.ArrowRight=false],['Z',()=>keys.z=true,()=>keys.z=false],['爆气',()=>keys.v=true,null],['天书',()=>keys.b=true,null],['跳',()=>keys.Space=true,()=>keys.Space=false]].forEach(([k,dn,up])=>{
+    const b=document.createElement('button');
+    b.textContent=k;b.style.cssText='width:54px;height:48px;font-size:14px;margin:0 3px;background:#8a6a1a';
+    b.addEventListener('pointerdown',e=>{e.preventDefault();dn()});
+    if(up)b.addEventListener('pointerup',up);
+    tp.appendChild(b);
+  });
+  document.body.appendChild(tp);
+}
+reset();
+function loop(){requestAnimationFrame(loop);if(state==='play')update();draw()}
+loop();
+</script>
+</body>
+</html>

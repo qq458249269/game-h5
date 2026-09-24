@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>三国志2 · 赤壁之战</title>
+<style>
+html,body{margin:0;background:#1a0f08;color:#ffe;font-family:"KaiTi","STKaiti",serif;height:100%;display:flex;align-items:center;justify-content:center;touch-action:none;user-select:none}
+#box{text-align:center}
+canvas{border:3px solid #7a5220;background:#000;touch-action:none}
+#hud{font-size:14px;color:#fc6;margin:6px 0}
+#msg{font-size:16px;color:#f66;height:22px}
+#tip{font-size:11px;color:#765;margin-top:4px;max-width:640px}
+button{background:#7a5220;border:0;color:#ffe;font-family:inherit;padding:6px 16px;cursor:pointer;margin-top:4px}
+</style>
+</head>
+<body>
+<div id="box">
+  <div id="hud">关羽 <span id="hp" style="color:#f44">██████████</span>　得分 <span id="sc">0</span>　♥ <span id="lf">2</span></div>
+  <canvas id="cv" width="640" height="400"></canvas>
+  <div id="msg">按 开始 或 Enter</div>
+  <button id="btn">开始 (Enter)</button>
+  <div id="tip">← → ↑ ↓ 走位 · Z 连打三段出招 · 空格 跳(跳中Z=跳刺) · 吃包子回血 · 终点火烧赤壁战吕布</div>
+</div>
+<script>
+'use strict';
+const cv=document.getElementById('cv'),cx=cv.getContext('2d');
+const hpEl=document.getElementById('hp'),scEl=document.getElementById('sc'),lfEl=document.getElementById('lf'),msgEl=document.getElementById('msg'),btn=document.getElementById('btn');
+const W=640,H=400,YMIN=305,YMAX=385,LEVEL=3800;
+let actx=null;
+function beep(f,d,type,vol){
+  try{
+    if(!actx)actx=new(window.AudioContext||window.webkitAudioContext)();
+    const o=actx.createOscillator(),g=actx.createGain();
+    o.connect(g);g.connect(actx.destination);
+    o.type=type||'square';o.frequency.value=f;g.gain.value=vol||0.03;
+    o.start();o.stop(actx.currentTime+d);
+  }catch(e){}
+}
+let p,enemies,items,frame,score,lives,cam,state,keys,gateIdx,spawned,shake,comboT;
+const GATES=[
+  {x:650,list:[['knife',3]]},
+  {x:1400,list:[['knife',3],['axe',1]]},
+  {x:2200,list:[['knife',4],['axe',2]]},
+  {x:2900,list:[['knife',3],['axe',2],['knife',3]]},
+];
+function reset(){
+  p={x:80,y:360,vx:0,vy:0,dir:1,hp:100,maxhp:100,onG:true,atkT:0,atkHit:false,combo:0,jumpAtk:false,hurtT:0,invT:0,dead:false};
+  enemies=[];items=[];
+  frame=0;score=0;lives=2;cam=0;shake=0;comboT=0;
+  gateIdx=0;spawned=false;
+  keys={};
+  state='play';upd();msgEl.textContent='第一阵 · 虎牢关前';
+  setTimeout(()=>{if(msgEl.textContent.startsWith('第一阵'))msgEl.textContent=''},2000);
+}
+function upd(){
+  score>0&&(scEl.textContent=score);
+  const seg=Math.ceil(p.hp/p.maxhp*10);
+  hpEl.textContent='█'.repeat(Math.max(0,seg))+'░'.repeat(10-seg);
+  lfEl.textContent=lives;
+}
+function mkEnemy(type,x){
+  const base={x,y:YMIN+Math.random()*(YMAX-YMIN),dir:-1,hurtT:0,atkT:0,downT:0,vz:0};
+  if(type==='knife')return{...base,type,hp:26,sp:1.15,dmg:9,score:300,r:12};
+  if(type==='axe')return{...base,type,hp:60,sp:0.75,dmg:15,score:500,r:14,big:true};
+  return{...base,type:'boss',hp:230,sp:0.95,dmg:18,score:5000,r:18,big:true,boss:true};
+}
+function gameOver(){
+  state='over';msgEl.textContent='GAME OVER';
+  btn.textContent='再来一局 (Enter)';
+}
+function victory(){
+  state='win';msgEl.textContent='火烧赤壁 · 天下三分!';
+  btn.textContent='再玩一次 (Enter)';
+  beep(600,0.2);setTimeout(()=>beep(800,0.2),220);setTimeout(()=>beep(1000,0.45),440);
+}
+function killP(){
+  if(p.invT>0||p.dead||state!=='play')return;
+  p.hurtT=30;p.hp-=0;beep(90,0.4,'sawtooth',0.08);
+  lives--;upd();
+  if(lives<0){gameOver();return}
+  p.hp=p.maxhp;p.invT=150;
+  p.x=Math.max(cam+40,p.x-120);
+  upd();
+}
+function update(){
+  frame++;
+  if(shake>0)shake--;
+  // ---- 玩家 ----
+  if(!p.dead){
+    const spd=2.2;
+    let mx=0,my=0;
+    if(p.hurtT<=0&&p.atkT<=0){
+      if(keys.ArrowLeft)mx=-1,p.dir=-1;
+      if(keys.ArrowRight)mx=1,p.dir=1;
+      if(keys.ArrowUp)my=-1;
+      if(keys.ArrowDown)my=1;
+    }
+    p.x+=mx*spd;p.y+=my*spd*0.6;
+    p.x=Math.max(cam+16,Math.min(LEVEL-16,p.x));
+    p.y=Math.max(YMIN,Math.min(YMAX,p.y));
+    // 跳
+    if(!p.onG){
+      p.vy+=0.5;p.y0=p.y;
+      // 空中用 zy
+    }
+    if(keys.Space&&p.onG&&p.hurtT<=0){p.vz=-9;p.onG=false;beep(280,0.08,'sine',0.02)}
+    if(!p.onG){p.vz+=0.5;p.zy=(p.zy||0)+p.vz;if(p.zy>=0){p.zy=0;p.onG=true}}
+    // 攻击
+    if(keys.z&&p.atkT<=0&&p.hurtT<=0){
+      if(!p.onG){p.atkT=16;p.jumpAtk=true;p.atkHit=false;beep(500,0.06,'square',0.02)}
+      else{p.atkT=13;p.combo=(comboT>frame-40?p.combo:0)+1;comboT=frame;p.atkHit=false;
+        beep(p.combo===3?300:600,0.05,'square',0.02)}
+    }
+    if(p.atkT>0){
+      p.atkT--;
+      const dmgWin=p.jumpAtk?[4,14]:[3,8];
+      const prog=13-p.atkT;
+      if(!p.atkHit&&prog>=dmgWin[0]&&prog<=dmgWin[1]){
+        const reach=p.jumpAtk?26:38;
+        const dmg=p.jumpAtk?14:(p.combo===3?22:p.combo===2?12:8);
+        for(const e of enemies){
+          if(e.hp<=0||e.downT>0)continue;
+          const dx=(e.x-p.x)*p.dir;
+          if(dx>-10&&dx<reach&&Math.abs(e.y-p.y-(p.zy||0)*0)<20){
+            hurtEnemy(e,dmg,p.combo===3||p.jumpAtk);
+            p.atkHit=true;break;
+          }
+        }
+      }
+    }
+    if(p.hurtT>0){p.hurtT--;p.x-=p.dir*0.8}
+    if(p.invT>0)p.invT--;
+    // 被敌人攻击判定在敌人循环里
+  }
+  // 摄像机
+  if(p.x-cam>W*0.6)cam=p.x-W*0.6;
+  if(p.x-cam<W*0.3)cam=p.x-W*0.3;
+  cam=Math.max(0,Math.min(LEVEL-W,cam));
+  // ---- 刷兵 ----
+  if(gateIdx<GATES.length){
+    const g=GATES[gateIdx];
+    if(!spawned&&p.x>g.x-350&&enemies.length===0){
+      g.list.forEach(([t,n])=>{for(let i=0;i<n;i++)enemies.push(mkEnemy(t,cam+W+60+i*46))});
+      spawned=true;msgEl.textContent='敌将来袭!';
+    }
+    if(spawned&&enemies.length===0){gateIdx++;spawned=false;msgEl.textContent='';score+=1000;upd()}
+  }else{
+    // 最终BOSS
+    if(enemies.length===0&&!p.bossDone){
+      if(p.x>LEVEL-900){
+        enemies.push(mkEnemy('boss',cam+W+80));
+        msgEl.textContent='吕布 袭来!';
+        beep(100,0.6,'sawtooth',0.09);
+      }
+    }else if(p.bossDone!==true&&enemies.length===0&&enemies.length===0){
+      // boss已清
+      if(!p.winFlag){p.winFlag=true;setTimeout(victory,800)}
+    }
+  }
+  // ---- 敌人 ----
+  for(const e of enemies){
+    if(e.hp<=0)continue;
+    if(e.downT>0){e.downT--;if(e.downT===0&&e.hp<=0)continue;continue}
+    if(e.hurtT>0){e.hurtT--;e.x-=e.dir*1.5;continue}
+    const dx=p.x-e.x,dy=p.y-e.y;
+    e.dir=Math.sign(dx)||-1;
+    const L=Math.hypot(dx,dy);
+    if(L>e.r+16){
+      e.x+=dx/L*e.sp;e.y+=dy/L*e.sp*0.6;
+    }else{
+      e.atkT--;
+      if(e.atkT<=0){
+        e.atkT=e.boss?50:80+Math.random()*40;
+        // 挥击
+        if(Math.abs(dx)<e.r+22&&Math.abs(dy)<18){
+          if(p.invT<=0&&p.hurtT<=0){
+            p.hurtT=22;p.hp-=e.dmg;upd();
+            beep(150,0.2,'sawtooth',0.06);shake=10;
+            if(p.hp<=0)killP();
+          }
+        }
+      }
+    }
+    e.x=Math.max(cam-40,Math.min(LEVEL,e.x));
+    e.y=Math.max(YMIN,Math.min(YMAX,e.y));
+    // 碰撞挤压
+    if(L<10){e.x-=Math.sign(dx)*0.5}
+  }
+  enemies=enemies.filter(e=>e.hp>0);
+  // ---- 物品 ----
+  for(const it of items){
+    it.t=(it.t||0)+1;
+    if(Math.abs(it.x-p.x)<20&&Math.abs(it.y-p.y)<16){
+      it.dead=true;
+      if(it.kind==='meat'){p.hp=Math.min(p.maxhp,p.hp+40);msgEl.textContent='烤肉! 体力恢复';upd()}
+      else{score+=500;upd();msgEl.textContent='金珠 +500'}
+      setTimeout(()=>{if(msgEl.textContent.includes('恢复')||msgEl.textContent.includes('金珠'))msgEl.textContent=''},1200);
+      beep(900,0.12,'sine',0.05);
+    }
+  }
+  items=items.filter(i=>!i.dead);
+}
+function hurtEnemy(e,dmg,knock){
+  e.hp-=dmg;e.hurtT=knock?26:14;
+  beep(180,0.08,'sawtooth',0.04);
+  if(e.hp<=0){
+    e.downT=30;
+    score+=e.score;upd();
+    if(e.boss){shake=40;msgEl.textContent='吕布 败走!';setTimeout(()=>{enemies=[]},900)}
+    else if(Math.random()<0.25)items.push({x:e.x,y:e.y,kind:Math.random()<0.6?'meat':'coin'});
+  }else if(knock)e.downT=24;
+}
+function draw(){
+  if(shake>0)cx.save(),cx.translate((Math.random()-0.5)*6,(Math.random()-0.5)*6);
+  // 天空
+  const g=cx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,'#3a2010');g.addColorStop(0.7,'#6b3a14');g.addColorStop(1,'#8a4a1a');
+  cx.fillStyle=g;cx.fillRect(0,0,W,H);
+  // 远山与红旗
+  cx.fillStyle='#2a1808';
+  for(let i=0;i<7;i++){
+    const mx=((i*360-cam*0.25)%(W+360)+W+360)%(W+360)-180;
+    cx.beginPath();cx.moveTo(mx-160,YMIN);cx.lineTo(mx,YMIN-100-(i%2)*40);cx.lineTo(mx+160,YMIN);cx.fill();
+  }
+  // 战船旗（赤壁氛围）
+  for(let x=300;x<LEVEL;x+=500){
+    const sx=x-cam*0.7;
+    if(sx>-40&&sx<W+40){
+      cx.fillStyle='#5a3a10';cx.fillRect(sx,YMIN-120,4,120);
+      cx.fillStyle='#c33';
+      const wv=Math.sin(frame*0.1)*4;
+      cx.beginPath();cx.moveTo(sx+4,YMIN-118);cx.lineTo(sx+40,YMIN-110+wv);cx.lineTo(sx+4,YMIN-100);cx.fill();
+    }
+  }
+  // 地面
+  cx.fillStyle='#7a5a28';cx.fillRect(0,YMAX+8,W,H-YMAX-8);
+  cx.fillStyle='#8a6a34';cx.fillRect(0,YMIN,W,YMAX-YMIN+8);
+  cx.strokeStyle='rgba(60,40,10,.4)';
+  for(let i=0;i<6;i++){
+    const yy=YMIN+14+i*13;
+    cx.beginPath();cx.moveTo(0,yy);cx.lineTo(W,yy);cx.stroke();
+  }
+  // 排序绘制（按y）
+  const ents=[];
+  for(const e of enemies)if(e.hp>0)ents.push({y:e.y,d:()=>drawEnemy(e)});
+  for(const it of items)ents.push({y:it.y,d:()=>drawItem(it)});
+  ents.push({y:p.y,d:drawPlayer});
+  ents.sort((a,b)=>a.y-b.y).forEach(o=>o.d());
+  // 敌人血条(顶部)
+  let bi=0;
+  for(const e of enemies){
+    if(e.hp<=0||bi>=3)continue;bi++;
+    const bw=150;
+    cx.fillStyle='#300';cx.fillRect(W-bw-14,14+ (bi-1)*14,bw,9);
+    cx.fillStyle=e.boss?'#f80':'#c33';
+    cx.fillRect(W-bw-14,14+(bi-1)*14,bw*e.hp/(e.boss?230:e.big?60:26),9);
+    cx.fillStyle='#fed';cx.font='10px serif';
+    cx.fillText(e.boss?'吕布':e.big?'刀斧手':'刀兵',W-bw-14,10+(bi-1)*14);
+  }
+  if(shake>0)cx.restore();
+  if(state==='over'||state==='win'){
+    cx.fillStyle='rgba(0,0,0,.6)';cx.fillRect(0,150,W,100);
+    cx.fillStyle=state==='win'?'#fd5':'#f44';
+    cx.font='bold 36px "KaiTi",serif';cx.textAlign='center';
+    cx.fillText(state==='win'?'大 获 全 胜':'败 北',W/2,205);
+    cx.fillStyle='#fff';cx.font='15px serif';
+    cx.fillText('得分 '+score,W/2,232);
+  }
+}
+function drawPlayer(){
+  const sx=p.x-cam,sy=p.y+(p.zy||0);
+  if(p.invT>0&&p.invT%8<4)cx.globalAlpha=0.35;
+  // 影子
+  cx.fillStyle='rgba(0,0,0,.3)';
+  cx.beginPath();cx.ellipse(p.x-cam,p.y+6,14,4,0,0,7);cx.fill();
+  // 腿
+  const walk=(keys.ArrowLeft||keys.ArrowRight||keys.ArrowUp||keys.ArrowDown)&&p.atkT<=0;
+  const lo=walk?Math.sin(frame*0.35)*4:0;
+  cx.fillStyle='#2a4a2a';
+  cx.fillRect(sx-6+lo,sy-10,5,10);cx.fillRect(sx+1-lo,sy-10,5,10);
+  // 绿袍身体
+  cx.fillStyle='#2a7a3a';cx.fillRect(sx-8,sy-30,16,20);
+  cx.fillStyle='#1a5a2a';cx.fillRect(sx-8,sy-16,16,4);
+  // 头+长髯
+  cx.fillStyle='#e8c39e';cx.beginPath();cx.arc(sx,sy-36,6,0,7);cx.fill();
+  cx.fillStyle='#111';cx.fillRect(sx-6,sy-40,12,3);
+  cx.fillStyle='#333';cx.fillRect(sx+p.dir*3,sy-33,p.dir*4,8);
+  // 青龙偃月刀
+  cx.save();cx.translate(sx,sy-24);
+  if(p.atkT>0&&!p.jumpAtk){
+    const pr=(13-p.atkT)/13;
+    cx.rotate(p.dir*(pr<0.5?-1.6+pr*3.4:1.1));
+  }else cx.rotate(p.dir*0.5);
+  cx.fillStyle='#543';cx.fillRect(0,-2,p.dir*40,3);
+  cx.fillStyle='#9ab';
+  cx.beginPath();cx.moveTo(p.dir*40,-2);cx.lineTo(p.dir*52,-6);cx.lineTo(p.dir*48,4);cx.lineTo(p.dir*40,1);cx.fill();
+  cx.restore();
+  cx.globalAlpha=1;
+}
+function drawEnemy(e){
+  const sx=e.x-cam,sy=e.y;
+  cx.fillStyle='rgba(0,0,0,.3)';
+  cx.beginPath();cx.ellipse(sx,sy+6,e.r,4,0,0,7);cx.fill();
+  const down=e.downT>0||e.hurtT>0;
+  if(down)cx.save(),cx.translate(sx,sy),cx.rotate(1.2),cx.translate(-sx,-sy);
+  const col=e.boss?'#7a2020':e.big?'#5a4a6a':'#4a5a3a';
+  // 腿
+  cx.fillStyle='#333';
+  cx.fillRect(sx-5,sy-10,4,10);cx.fillRect(sx+1,sy-10,4,10);
+  // 身体
+  cx.fillStyle=col;
+  const bs=e.big?1.3:1;
+  cx.fillRect(sx-7*bs,sy-30*bs,14*bs,20*bs);
+  // 头
+  cx.fillStyle='#e8c39e';
+  cx.beginPath();cx.arc(sx,sy-34*bs,5.5*bs,0,7);cx.fill();
+  // 头盔
+  cx.fillStyle=e.boss?'#c33':e.big?'#668':'#445';
+  cx.fillRect(sx-6*bs,sy-39*bs,12*bs,4*bs);
+  // 武器
+  cx.fillStyle='#666';
+  if(e.boss){cx.fillRect(sx+e.dir*4,sy-30,e.dir*34,4);cx.fillStyle='#c22';cx.fillRect(sx+e.dir*36,sy-34,e.dir*8,12)}
+  else if(e.big){cx.fillRect(sx+e.dir*4,sy-26,e.dir*26,6)}
+  else{cx.fillRect(sx+e.dir*5,sy-20,e.dir*18,3)}
+  if(down)cx.restore();
+}
+function drawItem(it){
+  const sx=it.x-cam,sy=it.y;
+  if(sx<-20||sx>W+20)return;
+  if(it.kind==='meat'){
+    cx.fillStyle='#b5432a';cx.beginPath();cx.ellipse(sx,sy-6,8,5,0,0,7);cx.fill();
+    cx.fillStyle='#eee';cx.fillRect(sx+6,sy-10,3,10);
+  }else{
+    cx.fillStyle='#fd0';cx.beginPath();cx.arc(sx,sy-5,5,0,7);cx.fill();
+    cx.fillStyle='#a80';cx.fillRect(sx-2,sy-7,4,4);
+  }
+}
+document.addEventListener('keydown',e=>{
+  if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown',' ','z','Z'].includes(e.key))e.preventDefault();
+  if(e.key==='ArrowLeft')keys.ArrowLeft=true;
+  if(e.key==='ArrowRight')keys.ArrowRight=true;
+  if(e.key==='ArrowUp')keys.ArrowUp=true;
+  if(e.key==='ArrowDown')keys.ArrowDown=true;
+  if(e.key==='z'||e.key==='Z')keys.z=true;
+  if(e.key===' '||e.key==='Spacebar')keys.Space=true;
+  if(e.key==='Enter'&&state!=='play'){reset();btn.textContent='重开 (Enter)'}
+});
+document.addEventListener('keyup',e=>{
+  if(e.key==='ArrowLeft')keys.ArrowLeft=false;
+  if(e.key==='ArrowRight')keys.ArrowRight=false;
+  if(e.key==='ArrowUp')keys.ArrowUp=false;
+  if(e.key==='ArrowDown')keys.ArrowDown=false;
+  if(e.key==='z'||e.key==='Z')keys.z=false;
+  if(e.key===' '||e.key==='Spacebar')keys.Space=false;
+});
+btn.onclick=()=>{if(state!=='play'){reset();btn.textContent='重开 (Enter)'}};
+if('ontouchstart' in window){
+  const tp=document.createElement('div');
+  tp.style.cssText='position:fixed;bottom:8px;left:0;right:0;text-align:center';
+  [['↖',()=>{keys.ArrowLeft=true;keys.ArrowUp=true},()=>{keys.ArrowLeft=false;keys.ArrowUp=false}],
+   ['←',()=>keys.ArrowLeft=true,()=>keys.ArrowLeft=false],
+   ['→',()=>keys.ArrowRight=true,()=>keys.ArrowRight=false],
+   ['↘',()=>{keys.ArrowRight=true;keys.ArrowDown=true},()=>{keys.ArrowRight=false;keys.ArrowDown=false}],
+   ['Z',()=>keys.z=true,()=>keys.z=false],
+   ['跳',()=>keys.Space=true,()=>keys.Space=false]].forEach(([k,dn,up])=>{
+    const b=document.createElement('button');
+    b.textContent=k;b.style.cssText='width:52px;height:48px;font-size:16px;margin:0 3px;background:#7a5220';
+    b.addEventListener('pointerdown',e=>{e.preventDefault();dn()});
+    b.addEventListener('pointerup',up);
+    tp.appendChild(b);
+  });
+  document.body.appendChild(tp);
+}
+reset();
+function loop(){
+  requestAnimationFrame(loop);
+  if(state==='play')update();
+  draw();
+}
+loop();
+</script>
+</body>
+</html>

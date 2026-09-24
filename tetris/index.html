@@ -1,0 +1,80 @@
+<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>俄罗斯方块 · TETRIS</title>
+<style>
+html,body{margin:0;padding:0;background:#0b0b12;color:#fff;font-family:"Segoe UI",system-ui,sans-serif;height:100%;display:flex;align-items:center;justify-content:center;touch-action:none;user-select:none}
+#wrap{display:flex;gap:16px;align-items:flex-start;padding:10px}
+canvas{border:2px solid #3b3b52;background:#12121c;image-rendering:pixelated;touch-action:none}
+.side{font-size:12px;line-height:1.5;color:#9aa}
+h1{font-size:15px;color:#e33;margin:0 0 6px;letter-spacing:2px}
+.score{color:#ff3;font-size:16px}
+.keys{margin-top:14px;font-size:11px;color:#667}
+#msg{margin-top:10px;color:#ff3;font-weight:bold}
+button{margin-top:8px;background:#e33;border:0;color:#fff;padding:5px 12px;font-size:12px;cursor:pointer}
+@media (max-width:640px){#wrap{flex-direction:column;align-items:center;gap:6px}.side{display:flex;gap:10px;font-size:11px}.keys{display:none}}
+</style></head><body>
+<div id="wrap">
+<canvas id="cv" width="240" height="480"></canvas>
+<div class="side"><h1>TETRIS<br>俄罗斯方块</h1>
+分数 <div class="score" id="score">0</div>
+行数 <div id="lines">0</div>
+等级 <div id="lv">1</div>
+<canvas id="next" width="96" height="96" style="border:1px solid #333;background:#12121c"></canvas>
+<div id="msg"></div><button id="btn">开始 (Enter)</button>
+<div class="keys">← → 移动 | ↑ 旋转<br>↓ 软降 | 空格 硬降<br>P 暂停</div></div></div>
+<script>
+const C=24, W=10, H=20, cv=document.getElementById('cv'), cx=cv.getContext('2d');
+const nx=document.getElementById('next'), nxc=nx.getContext('2d');
+const SH={
+I:[[0,0,0,0],[1,1,1,1],[0,0,0,0],[0,0,0,0]],O:[[1,1],[1,1]],
+T:[[0,1,0],[1,1,1],[0,0,0]],S:[[0,1,1],[1,1,0],[0,0,0]],
+Z:[[1,1,0],[0,1,1],[0,0,0]],J:[[1,0,0],[1,1,1],[0,0,0]],L:[[0,0,1],[1,1,1],[0,0,0]]};
+const CO={I:'#0ff',O:'#ff0',T:'#b0f',S:'#0f0',Z:'#f00',J:'#06f',L:'#f80'};
+let grid,cur,curT,nextT,score,lines,lv,dropT,dropI,keys={},over=false,paused=true,startT;
+const el=id=>document.getElementById(id);
+function newBag(){const b=['I','O','T','S','Z','J','L'];for(let i=b.length-1;i>0;i--){const j=Math.random()*(i+1)|0;[b[i],b[j]]=[b[j],b[i]]}return b}
+let bag=[];
+function nextPiece(){if(!bag.length)bag=newBag();const t=bag.pop(),m=SH[t].map(r=>r.slice());return {m,t,x:(W-m.length>>1),y:0}}
+function rot(m){const n=m.length,r=[];for(let y=0;y<n;y++){r[y]=[];for(let x=0;x<n;x++)r[y][x]=m[n-1-x][y]}return r}
+function hit(p,dx=0,dy=0,m){m=m||p.m;for(let y=0;y<m.length;y++)for(let x=0;x<m[y].length;x++){if(!m[y][x])continue;const gx=p.x+x+dx,gy=p.y+y+dy;if(gx<0||gx>=W||gy>=H)return true;if(gy>=0&&grid[gy][gx])return true}return false}
+function lock(){for(let y=0;y<cur.m.length;y++)for(let x=0;x<cur.m[y].length;x++)if(cur.m[y][x]){const gy=cur.y+y;if(gy<0)return die();grid[gy][cur.x+x]=cur.t}
+ let n=0;for(let y=0;y<H;y++)if(grid[y].every(v=>v)){grid.splice(y,1);grid.unshift(Array(W).fill(0));n++}
+ if(n){lines+=n;score+=[0,40,100,300,1200][n]*lv;el('lines').textContent=lines;el('score').textContent=score;lv=(lines/10|0)+1;el('lv').textContent=lv;dropI=Math.max(80,800-(lv-1)*70)}
+ cur=nextPiece();if(hit(cur))die()}
+function die(){over=true;paused=true;el('msg').textContent='GAME OVER — 得分 '+score;el('btn').textContent='再来一局 (Enter)'}
+function reset(){grid=Array.from({length:H},()=>Array(W).fill(0));score=0;lines=0;lv=1;dropI=800;dropT=0;over=false;cur=nextPiece();nextT=nextPiece();el('score').textContent=0;el('lines').textContent=0;el('lv').textContent=1;el('msg').textContent=''}
+function draw(){cx.fillStyle='#12121c';cx.fillRect(0,0,240,480);
+ cx.strokeStyle='#1e1e30';for(let i=1;i<W;i++){cx.beginPath();cx.moveTo(i*C,0);cx.lineTo(i*C,H*C);cx.stroke()}for(let i=1;i<H;i++){cx.beginPath();cx.moveTo(0,i*C);cx.lineTo(W*C,i*C);cx.stroke()}
+ for(let y=0;y<H;y++)for(let x=0;x<W;x++)if(grid[y][x])px(cx,x*C,y*C,CO[grid[y][x]]);
+ let gy=cur.y;while(!hit(cur,0,gy-cur.y+1))gy++;
+ for(let y=0;y<cur.m.length;y++)for(let x=0;x<cur.m[y].length;x++)if(cur.m[y][x]){px(cx,(cur.x+x)*C,(gy+y)*C,'rgba(255,255,255,0.08)');
+ if(cur.y+y>=0)px(cx,(cur.x+x)*C,(cur.y+y)*C,CO[cur.t])}}
+function px(c,X,Y,col){c.fillStyle=col;c.fillRect(X+1,Y+1,C-2,C-2);c.fillStyle='rgba(255,255,255,.35)';c.fillRect(X+1,Y+1,C-2,3);c.fillStyle='rgba(0,0,0,.3)';c.fillRect(X+1,Y+C-4,C-2,3)}
+function drawNext(){nxc.fillStyle='#12121c';nxc.fillRect(0,0,96,96);if(!nextT)return;const m=SH[nextT.t],s=20,ox=(96-m.length*s)/2,oy=(96-m.length*s)/2;
+ for(let y=0;y<m.length;y++)for(let x=0;x<m[y].length;x++)if(m[y][x]){nxc.fillStyle=CO[nextT.t];nxc.fillRect(ox+x*s+1,oy+y*s+1,s-2,s-2)}}
+function step(t){requestAnimationFrame(step);if(paused)return;
+ if(keys.ArrowLeft&&(t-(keys.lT||0))>60){keys.lT=t;if(!hit(cur,-1))cur.x--}
+ if(keys.ArrowRight&&(t-(keys.rT||0))>60){keys.rT=t;if(!hit(cur,1))cur.x++}
+ if(keys.ArrowDown&&(t-(keys.dT||0))>45){keys.dT=t;score+=1;el('score').textContent=score;if(!hit(cur,0,1))cur.y++}
+ if(t-dropT>dropI){dropT=t;if(!hit(cur,0,1))cur.y++;else lock()}
+ draw();drawNext()}
+document.addEventListener('keydown',e=>{if(['ArrowLeft','ArrowRight','ArrowDown','ArrowUp',' '].includes(e.key))e.preventDefault();
+ if(e.key==='Enter'){if(over||!grid||paused&&over)reset();paused=false;el('msg').textContent=paused?'':'如需暂停按 P';el('btn').textContent='暂停/继续 (P)';return}
+ if(e.key==='p'||e.key==='P'){paused=!paused;return}
+ if(paused)return;
+ if(e.key==='ArrowLeft')keys.ArrowLeft=true;if(e.key==='ArrowRight')keys.ArrowRight=true;if(e.key==='ArrowDown')keys.ArrowDown=true;
+ if(e.key==='ArrowUp'){let m=rot(cur.m),k=0;while(hit(cur,0,0,m)&&k<3){cur.x+=hit(cur,1,0,m)?-1:1;k++}if(!hit(cur,0,0,m))cur.m=m}
+ if(e.key===' '){while(!hit(cur,0,1))cur.y++,score+=2;lock();el('score').textContent=score}});
+document.addEventListener('keyup',e=>{keys.ArrowLeft=keys.ArrowRight=keys.ArrowDown=false});
+el('btn').onclick=()=>{if(over||!grid)reset();paused=!paused;if(!paused)el('btn').textContent='暂停 (P)'};
+// 触屏按钮
+const tp=document.createElement('div');tp.style.cssText='position:fixed;bottom:8px;left:0;right:0;display:none;justify-content:center;gap:10px';
+['←','↻','→','↓','⤓'].forEach(k=>{const b=document.createElement('button');b.textContent=k;b.style.cssText='width:52px;height:44px;font-size:20px;background:#2b2b40';b.onpointerdown=e=>{e.preventDefault();
+ if(k==='←'&&!hit(cur,-1))cur.x--;if(k==='→'&&!hit(cur,1))cur.x--;if(k==='↓'&&!hit(cur,0,1))cur.y++;
+ if(k==='↻'){let m=rot(cur.m);if(!hit(cur,0,0,m))cur.m=m}
+ if(k==='⤓'){while(!hit(cur,0,1))cur.y++;lock()}draw()};tp.appendChild(b)});
+document.body.appendChild(tp);
+if('ontouchstart' in window){tp.style.display='flex';el('btn').textContent='开始'}
+cv.addEventListener('pointerdown',e=>{if(paused)return;const r=cv.getBoundingClientRect(),X=e.clientX-r.left;
+ if(X<80&&!hit(cur,-1))cur.x--;else if(X>160&&!hit(cur,1))cur.x--;else{let m=rot(cur.m);if(!hit(cur,0,0,m))cur.m=m}draw()});
+reset();nextT=nextPiece();requestAnimationFrame(step);
+</script></body></html>

@@ -1,0 +1,184 @@
+<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>噗哟噗哟 · PUYO PUYO</title>
+<style>
+html,body{margin:0;background:#14202e;color:#fff;font-family:"Segoe UI",system-ui,sans-serif;height:100%;display:flex;align-items:center;justify-content:center;touch-action:none;user-select:none}
+#wrap{display:flex;gap:14px;align-items:flex-start}
+canvas{border:2px solid #2a4a6a;border-radius:6px;background:#0d1622;touch-action:none}
+.side{font-size:12px;line-height:1.7;color:#8ac}
+h1{color:#f8c;margin:0 0 4px;font-size:16px}
+button{background:#e91e63;color:#fff;border:0;padding:6px 14px;font-size:13px;border-radius:4px;cursor:pointer;margin-top:6px}
+#msg{color:#ff8;font-weight:bold;margin-top:6px;min-height:18px}
+.keys{font-size:11px;color:#567;margin-top:10px}
+@media(max-width:640px){#wrap{flex-direction:column;align-items:center}.side{font-size:11px}.keys{display:none}}
+</style></head><body>
+<div id="wrap"><canvas id="cv" width="144" height="288"></canvas>
+<div class="side"><h1>PUYO PUYO<br>噗哟噗哟</h1>
+分数 <div id="sc" style="color:#ff3;font-size:18px">0</div>
+最高连锁 <div id="bc" style="color:#8f8;font-size:16px">0</div>
+<canvas id="nx" width="72" height="72" style="border:1px solid #244;border-radius:4px"></canvas>
+<div id="msg"></div><button id="btn">开始</button>
+<div class="keys">← → 移动 · ↑/X 旋转<br>↓ 加速 · 空格 快落<br>4个同色相连即可消除</div></div></div>
+<div id="touch" style="display:none;position:fixed;bottom:10px;left:0;right:0;text-align:center"></div>
+<script>
+const C=24, W=6, H=12, cv=document.getElementById('cv'), cx=cv.getContext('2d');
+const nxc=document.getElementById('nx').getContext('2d');
+const COLORS=['','#e53935','#43a047','#1e88e5','#fdd835','#8e24aa'];
+const OFFS=[[0,-1],[1,0],[0,1],[-1,0]];
+let grid, pair, nextPair, score, best, dropT, dropI, over, paused, running=false;
+const msgEl=document.getElementById('msg');
+function rnd(){return 1+(Math.random()*4|0)}
+function newGrid(){grid=Array.from({length:H},()=>Array(W).fill(0))}
+function cellFree(x,y){if(x<0||x>=W||y>=H)return false;if(y<0)return true;return grid[y][x]===0}
+function mkPair(){return{x:2,y:0,r:0,a:rnd(),b:rnd()}}
+function spawn(){
+  if(!cellFree(2,0)){gameOver();return}
+  pair=nextPair||mkPair();pair.x=2;pair.y=0;pair.r=0;
+  nextPair=mkPair();
+  if(!cellFree(pair.x,pair.y)||!cellFree(pair.x+OFFS[pair.r][0],pair.y+OFFS[pair.r][1]))gameOver();
+  drawNext();
+}
+function gameOver(){over=true;paused=true;msgEl.textContent='GAME OVER 得分 '+score;btn.textContent='再来一局'}
+function reset(){newGrid();score=0;best=0;over=false;paused=false;dropI=600;dropT=0;nextPair=mkPair();spawn();sc.textContent=0;bc.textContent=0;msgEl.textContent=''}
+function tryMove(dx){
+  if(!pair||over)return;
+  const[ox,oy]=OFFS[pair.r];
+  if(cellFree(pair.x+dx,pair.y)&&cellFree(pair.x+dx+ox,pair.y+oy))pair.x+=dx;
+}
+function tryRot(){
+  if(!pair||over)return;
+  const nr=(pair.r+1)%4,[dx,dy]=OFFS[nr];
+  if(cellFree(pair.x+dx,pair.y+dy)){pair.r=nr;return}
+  for(const k of[-1,1]){
+    if(cellFree(pair.x+k,pair.y)&&cellFree(pair.x+k+dx,pair.y+dy)){pair.x+=k;pair.r=nr;return}
+  }
+  if(cellFree(pair.x,pair.y-1)&&cellFree(pair.x+dx,pair.y-1+dy)){pair.y--;pair.r=nr}
+}
+function canFall(){
+  const[dx,dy]=OFFS[pair.r];
+  return cellFree(pair.x,pair.y+1)&&cellFree(pair.x+dx,pair.y+1+dy);
+}
+function lockPair(){
+  const[dx,dy]=OFFS[pair.r];
+  let bad=false;
+  const put=(x,y,c)=>{if(y<0){bad=true;return}grid[y][x]=c};
+  put(pair.x,pair.y,pair.a);
+  put(pair.x+dx,pair.y+dy,pair.b);
+  pair=null;
+  if(bad){gameOver();return}
+  resolve();
+}
+function applyGravity(){
+  for(let x=0;x<W;x++){
+    let w=H-1;
+    for(let y=H-1;y>=0;y--){
+      if(grid[y][x]){
+        if(y!==w){grid[w][x]=grid[y][x];grid[y][x]=0}
+        w--;
+      }
+    }
+  }
+}
+function findGroups(){
+  const seen=Array.from({length:H},()=>Array(W).fill(false));
+  const groups=[];
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++){
+    if(!grid[y][x]||seen[y][x])continue;
+    const col=grid[y][x],stack=[[x,y]],cells=[];
+    seen[y][x]=true;
+    while(stack.length){
+      const[cx0,cy0]=stack.pop();cells.push([cx0,cy0]);
+      for(const[ddx,ddy]of[[1,0],[-1,0],[0,1],[0,-1]]){
+        const nx0=cx0+ddx,ny0=cy0+ddy;
+        if(nx0<0||nx0>=W||ny0<0||ny0>=H)continue;
+        if(seen[ny0][nx0]||grid[ny0][nx0]!==col)continue;
+        seen[ny0][nx0]=true;stack.push([nx0,ny0]);
+      }
+    }
+    if(cells.length>=4)groups.push(cells);
+  }
+  return groups;
+}
+function resolve(){
+  let chainN=0;
+  while(true){
+    applyGravity();
+    const groups=findGroups();
+    if(!groups.length)break;
+    chainN++;
+    let cleared=0;
+    for(const g of groups){cleared+=g.length;for(const[x,y]of g)grid[y][x]=0}
+    score+=cleared*10*Math.min(chainN,10);
+    sc.textContent=score;
+    if(chainN>best){best=chainN;bc.textContent=best}
+    msgEl.textContent=chainN>=2?('★ '+chainN+' 连锁! ★'):'';
+  }
+  dropI=Math.max(300,600-score/2000|0);
+  spawn();
+}
+function hardDrop(){if(!pair)return;while(canFall())pair.y++;lockPair();draw()}
+function update(t){
+  requestAnimationFrame(update);
+  if(paused||!running)return;
+  if(!pair){draw();return}
+  if(t-dropT>dropI){
+    dropT=t;
+    if(canFall())pair.y++;
+    else lockPair();
+  }
+  draw();
+}
+function puyo(X,Y,col,r){
+  cx.fillStyle=COLORS[col];
+  cx.beginPath();cx.arc(X,Y,r,0,7);cx.fill();
+  cx.fillStyle='rgba(255,255,255,.5)';
+  cx.beginPath();cx.arc(X-r*0.3,Y-r*0.35,r*0.28,0,7);cx.fill();
+  cx.fillStyle='rgba(0,0,0,.18)';
+  cx.beginPath();cx.arc(X+r*0.25,Y+r*0.35,r*0.22,0,7);cx.fill();
+}
+function draw(){
+  cx.fillStyle='#0d1622';cx.fillRect(0,0,cv.width,cv.height);
+  cx.strokeStyle='rgba(60,90,130,.25)';
+  for(let i=1;i<W;i++){cx.beginPath();cx.moveTo(i*C,0);cx.lineTo(i*C,H*C);cx.stroke()}
+  for(let i=1;i<H;i++){cx.beginPath();cx.moveTo(0,i*C);cx.lineTo(W*C,i*C);cx.stroke()}
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++)if(grid[y][x])puyo(x*C+C/2,y*C+C/2,grid[y][x],C/2-2);
+  if(pair){
+    const[dx,dy]=OFFS[pair.r];
+    const cells=[[pair.x,pair.y,pair.a],[pair.x+dx,pair.y+dy,pair.b]];
+    for(const[px0,py0,c]of cells){
+      if(py0<0)continue;
+      puyo(px0*C+C/2,py0*C+C/2,c,C/2-2);
+    }
+  }
+}
+function drawNext(){
+  nxc.fillStyle='#0d1622';nxc.fillRect(0,0,72,72);
+  if(!nextPair)return;
+  nxc.fillStyle=COLORS[nextPair.a];nxc.beginPath();nxc.arc(36,24,11,0,7);nxc.fill();
+  nxc.fillStyle=COLORS[nextPair.b];nxc.beginPath();nxc.arc(36,48,11,0,7);nxc.fill();
+}
+const sc=document.getElementById('sc'),bc=document.getElementById('bc'),btn=document.getElementById('btn');
+document.addEventListener('keydown',e=>{
+  const k=e.key;
+  if(['ArrowLeft','ArrowRight','ArrowDown','ArrowUp',' '].includes(k))e.preventDefault();
+  if(k==='Enter'){if(over||!running){reset();btn.textContent='重开 (P)'}return}
+  if(k==='p'||k==='P'){if(running&&!over)paused=!paused;return}
+  if(paused||over)return;
+  if(k==='ArrowLeft')tryMove(-1);
+  if(k==='ArrowRight')tryMove(1);
+  if(k==='ArrowUp'||k==='x'||k==='X')tryRot();
+  if(k==='ArrowDown'&&pair&&canFall()){pair.y++;score++;sc.textContent=score;dropT=performance.now()}
+  if(k===' ')hardDrop();
+});
+btn.onclick=()=>{if(over||!running){reset()}else{paused=!paused;msgEl.textContent=paused?'已暂停':''}};
+// 触屏按钮
+const tp=document.getElementById('touch');
+[['←',()=>tryMove(-1)],['↻',tryRot],['→',()=>tryMove(1)],['↓',()=>{if(pair&&canFall()){pair.y++;dropT=performance.now()}}],['⤓',hardDrop]].forEach(([k,fn])=>{
+  const b=document.createElement('button');
+  b.textContent=k;b.style.cssText='width:54px;height:46px;font-size:20px;margin:0 4px;background:#26507a';
+  b.addEventListener('pointerdown',e=>{e.preventDefault();if(!paused&&pair)fn();draw()});
+  tp.appendChild(b);
+});
+if('ontouchstart' in window)tp.style.display='block';
+reset();running=true;
+// 初始处于运行态但让玩家按 Enter?——直接开始更顺滑：撤销上面注释
+</script></body></html>

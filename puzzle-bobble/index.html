@@ -1,0 +1,208 @@
+<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>泡泡龙 · PUZZLE BOBBLE</title>
+<style>
+html,body{margin:0;background:#1a0e2e;color:#fff;font-family:"Segoe UI",system-ui,sans-serif;height:100%;display:flex;align-items:center;justify-content:center;touch-action:none;user-select:none}
+#wrap{display:flex;gap:14px;align-items:flex-start}
+canvas{border:2px solid #6a3aa0;border-radius:8px;background:radial-gradient(#2a1650,#170b2c);touch-action:none;cursor:crosshair}
+.side{font-size:12px;line-height:1.7;color:#cabdf0;width:150px}
+h1{color:#6ef;margin:0 0 4px;font-size:16px}
+button{background:#7b2ff7;color:#fff;border:0;padding:6px 14px;font-size:13px;border-radius:4px;cursor:pointer;margin-top:6px}
+#msg{color:#ff8;font-weight:bold;margin-top:6px;min-height:18px}
+.keys{font-size:11px;color:#766;margin-top:10px}
+@media(max-width:640px){#wrap{flex-direction:column;align-items:center}.side{width:auto;font-size:11px}.keys{display:none}}
+</style></head><body>
+<div id="wrap"><canvas id="cv" width="336" height="480"></canvas>
+<div class="side"><h1>PUZZLE BOBBLE<br>泡泡龙</h1>
+分数 <div id="sc" style="color:#ff3;font-size:18px">0</div>
+关卡 <div id="lv" style="color:#6ef;font-size:16px">1</div>
+下一颗 <canvas id="nx" width="56" height="56" style="border:1px solid #548;border-radius:50%"></canvas>
+<div id="msg"></div><button id="btn">开始</button>
+<div class="keys">鼠标/触屏 瞄准发射<br>← → 微调 · ↑ 发射<br>3个同色消除，顶棚会下压</div></div></div>
+<script>
+const R=16, COLSW=11, cv=document.getElementById('cv'), cx=cv.getContext('2d');
+const nxc=document.getElementById('nx').getContext('2d');
+const COLORS=['#e53935','#43a047','#1e88e5','#fdd835','#8e24aa','#ff7043'];
+const CTR=336/2, LAUNCHY=480-30;
+let balls, cur, nxt, score, lv, flying, aim, over, msgEl=document.getElementById('msg');
+const sc=document.getElementById('sc'),lvEl=document.getElementById('lv'),btn=document.getElementById('btn');
+function rndC(n){return Math.random()*n|0}
+function rowOff(r){return r%2?R:0} // 奇数行右移半格
+function colsIn(r){return r%2?COLSW-1:COLSW}
+function newBoard(){
+  balls=[];
+  const rows=4+Math.min(lv-1,3);
+  const nc=2+Math.min(lv-1,4);
+  for(let r=0;r<rows;r++){
+    balls[r]=[];
+    for(let c=0;c<colsIn(r);c++){
+      balls[r][c]=(Math.random()<0.85)?1+rndC(nc):0;
+    }
+  }
+}
+function reset(){
+  score=0;lv=1;over=false;flying=null;aim=-Math.PI/2;
+  newBoard();newCur();
+  sc.textContent=0;lvEl.textContent=1;msgEl.textContent='';
+}
+function newCur(){cur=1+rndC(5);nxt=1+rndC(5);drawNext()}
+function ballAt(r,c){if(r<0||!balls[r])return 0;return balls[r][c]||0}
+function free(r,c){return ballAt(r,c)===0}
+function neighbors(r,c){
+  if(r%2)return[[r,c-1],[r,c+1],[r-1,c],[r-1,c+1],[r+1,c],[r+1,c+1]];
+  return[[r,c-1],[r,c+1],[r-1,c-1],[r-1,c],[r+1,c-1],[r+1,c]];
+}
+function inField(r,c){
+  if(r<0)return false;
+  if(c<0||c>=colsIn(r))return false;
+  return true;
+}
+function shoot(){
+  if(flying||over)return;
+  flying={x:CTR,y:LAUNCHY,dx:Math.cos(aim)*9,dy:Math.sin(aim)*9,c:cur};
+  cur=nxt;nxt=1+rndC(5);drawNext();
+}
+function snapBall(bx,by,col){
+  let r=Math.round((by-R)/ (R*2-2));  // 行距略小于2R
+  r=Math.max(0,r);
+  // 找最近的自由格
+  let best=null,bd=1e9;
+  for(let rr=Math.max(0,r-2);rr<=r+2;rr++){
+    for(let c=0;c<colsIn(rr);c++){
+      if(!free(rr,c))continue;
+      const bx2=c*(R*2)+R+rowOff(rr), by2=R+rr*(R*2-2);
+      const d=(bx2-bx)**2+(by2-by)**2;
+      if(d<bd){bd=d;best=[rr,c]}
+    }
+  }
+  if(!best)return;
+  const[rr,c]=best;
+  balls[rr]=balls[rr]||[];
+  balls[rr][c]=col;
+  // 同色消除
+  const same=[[rr,c]],seen=new Set([rr+','+c]);
+  let i=0;
+  while(i<same.length){
+    const[qr,qc]=same[i++];
+    for(const[nr,nc]of neighbors(qr,qc)){
+      if(!inField(nr,nc)||seen.has(nr+','+nc))continue;
+      if(ballAt(nr,nc)===col){seen.add(nr+','+nc);same.push([nr,nc])}
+    }
+  }
+  if(same.length>=3){
+    for(const[qr,qc]of same)balls[qr][qc]=0;
+    score+=same.length*10*(1+Math.max(0,same.length-3)*0.5|0);
+    // 悬空检查
+    const conn=new Set();
+    for(let c=0;c<colsIn(0);c++)if(ballAt(0,c)){conn.add('0,'+c);drop0(0,c,conn)}
+    let dropped=0;
+    for(let r=0;r<balls.length;r++)for(let c=0;c<colsIn(r);c++){
+      if(ballAt(r,c)&&!conn.has(r+','+c)){balls[r][c]=0;dropped++}
+    }
+    if(dropped){score+=dropped*20;msgEl.textContent='掉落 +'+dropped*20}
+    sc.textContent=score;
+  }
+  // 顶棚下压
+  if(balls.some(rw=>rw&&rw.some(v=>v))){pressCeiling()}
+  // 胜负
+  const remain=balls.some(rw=>rw&&rw.some(v=>v));
+  if(!remain){lv++;lvEl.textContent=lv;msgEl.textContent='过关! 第'+lv+'关';newBoard();newCur()}
+  else if(tooLow()){over=true;msgEl.textContent='GAME OVER';btn.textContent='再来一局'}
+  else newCur();
+}
+function drop0(r,c,conn){
+  for(const[nr,nc]of neighbors(r,c)){
+    if(conn.has(nr+','+nc))continue;
+    if(ballAt(nr,nc)){conn.add(nr+','+nc);drop0(nr,nc,conn)}
+  }
+}
+function tooLow(){
+  for(let r=0;r<balls.length;r++)if(balls[r]&&balls[r].some(v=>v)){
+    return R+r*(R*2-2)>LAUNCHY-R*2;
+  }
+  return false;
+}
+function pressCeiling(){
+  // 每发射6次下压一行
+  pressCeiling.n=(pressCeiling.n||0)+1;
+  if(pressCeiling.n%6)return;
+  const newB=[];
+  for(let r=0;r<balls.length+1;r++)newB[r+1]=balls[r]||[];
+  // 新顶行
+  newB[0]=[];
+  for(let c=0;c<colsIn(0);c++)newB[0][c]=1+rndC(4);
+  balls=newB;
+}
+function update(){
+  requestAnimationFrame(update);
+  if(!flying){
+    draw();return;
+  }
+  flying.x+=flying.dx;flying.y+=flying.dy;
+  if(flying.x<R){flying.x=R;flying.dx*=-1}
+  if(flying.x>336-R){flying.x=336-R;flying.dx*=-1}
+  if(flying.y<R){
+    snapBall(flying.x,R,flying.c);flying=null;draw();return;
+  }
+  // 碰撞检测
+  let hit=false;
+  const r0=Math.max(0,Math.round((flying.y-R)/(R*2-2))-1),r1=r0+4;
+  for(let r=r0;r<=r1&&!hit;r++){
+    for(let c=0;c<colsIn(r);c++){
+      if(!ballAt(r,c))continue;
+      const bx=c*(R*2)+R+rowOff(r),by=R+r*(R*2-2);
+      if((bx-flying.x)**2+(by-flying.y)**2<(R*2-4)**2){hit=true;break}
+    }
+  }
+  if(hit){snapBall(flying.x,flying.y,flying.c);flying=null}
+  draw();
+}
+function drawBall(x,y,c,r){
+  cx.fillStyle=COLORS[c-1]||'#888';
+  cx.beginPath();cx.arc(x,y,r,0,7);cx.fill();
+  cx.fillStyle='rgba(255,255,255,.45)';
+  cx.beginPath();cx.arc(x-r*0.3,y-r*0.35,r*0.3,0,7);cx.fill();
+}
+function draw(){
+  cx.fillStyle='#170b2c';cx.fillRect(0,0,336,480);
+  cx.strokeStyle='rgba(140,90,220,.4)';cx.strokeRect(1,1,334,478);
+  for(let r=0;r<balls.length;r++)for(let c=0;c<colsIn(r);c++){
+    if(ballAt(r,c))drawBall(c*(R*2)+R+rowOff(r),R+r*(R*2-2),balls[r][c],R-1);
+  }
+  // 瞄准线
+  if(!flying&&!over){
+    cx.strokeStyle='rgba(255,255,255,.35)';cx.setLineDash([4,6]);
+    cx.beginPath();cx.moveTo(CTR,LAUNCHY);
+    let x=CTR,y=LAUNCHY,dx=Math.cos(aim)*6,dy=Math.sin(aim)*6;
+    for(let i=0;i<80;i++){
+      x+=dx;y+=dy;
+      if(x<R||x>336-R)dx*=-1;
+      if(y<R)break;
+      cx.lineTo(x,y);
+    }
+    cx.stroke();cx.setLineDash([]);
+  }
+  // 发射器
+  if(cur)drawBall(CTR,LAUNCHY,cur,R);
+  cx.fillStyle='#6ef';cx.beginPath();cx.moveTo(CTR-14,LAUNCHY+14);cx.lineTo(CTR+14,LAUNCHY+14);cx.lineTo(CTR,LAUNCHY+2);cx.closePath();cx.fill();
+}
+function drawNext(){nxc.fillStyle='#170b2c';nxc.fillRect(0,0,56,56);if(nxt){nxc.fillStyle=COLORS[nxt-1];nxc.beginPath();nxc.arc(28,28,16,0,7);nxc.fill()}}
+cv.addEventListener('pointermove',e=>{
+  const r=cv.getBoundingClientRect();
+  const X=e.clientX-r.left,Y=e.clientY-r.top;
+  aim=Math.atan2(Y-LAUNCHY,X-CTR);
+  const LIM=0.35;
+  aim=Math.max(-Math.PI+LIM,Math.min(-LIM,aim));
+});
+cv.addEventListener('pointerdown',e=>{e.preventDefault();
+  if(over){reset();btn.textContent='重开';return}
+  cv.dispatchEvent(new PointerEvent('pointermove',e));
+  shoot();
+});
+document.addEventListener('keydown',e=>{
+  if(e.key==='ArrowLeft')aim=Math.max(-Math.PI+0.35,aim-0.06),draw();
+  if(e.key==='ArrowRight')aim=Math.min(-0.35,aim+0.06),draw();
+  if(e.key==='ArrowUp'||e.key===' '){e.preventDefault();if(over){reset()}else shoot()}
+});
+btn.onclick=()=>reset();
+reset();update();
+</script></body></html>
